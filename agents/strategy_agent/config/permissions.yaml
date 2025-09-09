@@ -1,0 +1,79 @@
+# Strategy Agent Permissions Configuration
+
+# File System Permissions
+filesystem:
+  read_access:
+    - path: "../../Project/indicator/"
+      recursive: true
+      description: "All indicator data and calculations"
+    - path: "../../Project/database/market_db/"
+      recursive: true
+      description: "Historical market data"
+    - path: "../../Project/database/backtest_db/"
+      recursive: true
+      description: "Backtesting results"
+    - path: "../../shared/configs/"
+      recursive: true
+      description: "Strategy configuration files"
+    - path: "../../shared/models/"
+      recursive: true
+      description: "ML model outputs"
+      
+  write_access:
+    - path: "./"
+      recursive: true
+      description: "Agent-specific files and logs"
+    - path: "../../Project/strategy/signals/"
+      recursive: true
+      description: "Generated signals"
+    - path: "../../Project/strategy/positions/"
+      recursive: true
+      description: "Position sizing decisions"
+    - path: "../../shared/communication/strategy_outputs/"
+      recursive: true
+      description: "Communication with other agents"
+      
+# API Permissions
+api:
+  allowed_endpoints:
+    - endpoint: "internal://data-agent/market-data"
+      methods: ["GET"]
+      description: "Market data retrieval"
+    - endpoint: "internal://model-agent/predictions"
+      methods: ["GET"]
+      description: "ML model predictions"
+    - endpoint: "internal://orchestrator/tasks"
+      methods: ["GET", "POST"]
+      description: "Task management"
+      
+# Resource Limits
+resources:
+  max_memory_mb: 2048
+  max_cpu_percent: 50
+  max_disk_space_mb: 5120
+  max_network_requests_per_minute: 1000
+  
+# Security Settings
+security:
+  encryption_required: true
+  audit_logging: true
+  access_token_required: true
+  rate_limiting: true
+  
+# Inter-Agent Communication
+communication:
+  allowed_agents:
+    - "data_agent"
+    - "model_agent"
+    - "backtest_agent"
+    - "orchestrator"
+  protocols:
+    - "markdown_tasks"
+    - "json_api"
+    - "file_based"
+    
+# Time-based Restrictions
+schedule:
+  allowed_hours: "00:00-23:59"  # 24/7 operation
+  maintenance_window: "02:00-03:00"  # Daily maintenance
+  emergency_override: true

@@ -1,0 +1,108 @@
+# Data Agent Permissions Configuration
+
+# File System Permissions
+filesystem:
+  read_access:
+    - path: "../../shared/configs/data_sources/"
+      recursive: true
+      description: "Data source configurations"
+    - path: "../../shared/external_apis/"
+      recursive: true
+      description: "External API configurations"
+    - path: "../../Project/database/"
+      recursive: true
+      description: "All database access for reading"
+      
+  write_access:
+    - path: "./"
+      recursive: true
+      description: "Agent-specific processing logs"
+    - path: "../../Project/database/market_db/"
+      recursive: true
+      description: "Market data storage - PRIMARY WRITE ACCESS"
+    - path: "../../Project/database/backtest_db/"
+      recursive: false
+      description: "Limited backtest data updates"
+    - path: "../../Project/service/data_gathering/"
+      recursive: true
+      description: "Data pipeline management"
+    - path: "../../Project/indicator/"
+      recursive: true
+      description: "Processed data for indicators"
+    - path: "../../shared/communication/data_updates/"
+      recursive: true
+      description: "Data availability notifications"
+    - path: "../../shared/data_cache/"
+      recursive: true
+      description: "Data caching and temporary storage"
+      
+# Database Permissions
+database:
+  full_access:
+    - "market_data"
+    - "price_history" 
+    - "volume_data"
+    - "corporate_actions"
+  read_only:
+    - "backtest_results"
+    - "strategy_performance"
+  schema_modification: true
+  backup_restore: true
+  
+# API Permissions
+api:
+  external_apis:
+    - provider: "alphavantage"
+      endpoints: ["stock", "forex", "crypto"]
+      rate_limit: "500/minute"
+    - provider: "yahoo_finance"
+      endpoints: ["quotes", "historical"]
+      rate_limit: "2000/hour"
+  internal_apis:
+    - endpoint: "internal://orchestrator/tasks"
+      methods: ["GET", "POST", "PUT"]
+    - endpoint: "internal://getstockdata-agent/requests"
+      methods: ["POST"]
+      
+# Resource Limits
+resources:
+  max_memory_mb: 8192
+  max_cpu_percent: 80
+  max_disk_space_gb: 100
+  max_network_bandwidth_mbps: 50
+  max_concurrent_connections: 100
+  
+# Security Settings
+security:
+  encryption_at_rest: true
+  encryption_in_transit: true
+  api_key_rotation: true
+  audit_logging: true
+  data_anonymization: false  # Financial data needs to be preserved
+  
+# Inter-Agent Communication
+communication:
+  allowed_agents:
+    - "getstockdata_agent"
+    - "api_agent"
+    - "orchestrator"
+    - "all_agents"  # For data distribution
+  data_sharing:
+    realtime_feed: true
+    bulk_export: true
+    api_access: true
+    
+# Time-based Operations
+schedule:
+  market_hours_priority: true
+  after_hours_processing: true
+  weekend_maintenance: true
+  holiday_schedule_aware: true
+  
+# Data Quality Controls
+quality_control:
+  validation_rules_enforcement: true
+  anomaly_detection_enabled: true
+  duplicate_prevention: true
+  data_lineage_tracking: true
+  backup_verification: true

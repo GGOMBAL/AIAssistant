@@ -1,0 +1,46 @@
+# Strategy Agent Configuration
+agent:
+  name: "Strategy Agent"
+  version: "1.0.0"
+  model: "Claude Opus 3.5"
+  layer: "Strategy Layer"
+  
+# Core Settings
+core:
+  max_concurrent_tasks: 5
+  task_timeout: 300  # seconds
+  retry_attempts: 3
+  log_level: "INFO"
+  
+# Strategy Parameters
+strategy:
+  signal_threshold: 0.7
+  position_size_limit: 0.1  # 10% of portfolio
+  risk_tolerance: 0.02       # 2% risk per trade
+  rebalance_frequency: "daily"
+  
+# Data Sources
+data_sources:
+  - "../../Project/indicator/"
+  - "../../Project/database/market_db/"
+  - "../../shared/models/"
+  
+# Output Destinations
+outputs:
+  signals: "../../Project/strategy/signals/"
+  positions: "../../Project/strategy/positions/"
+  reports: "../../shared/communication/strategy_outputs/"
+  
+# Performance Settings
+performance:
+  cache_enabled: true
+  cache_ttl: 3600  # 1 hour
+  batch_processing: true
+  parallel_execution: false
+  
+# Monitoring
+monitoring:
+  health_check_interval: 60  # seconds
+  performance_tracking: true
+  error_reporting: true
+  metrics_collection: true

@@ -1,0 +1,62 @@
+# Data Agent Configuration
+agent:
+  name: "Data Agent"
+  version: "1.0.0"
+  model: "Claude Opus"
+  layer: "Service Layer / Database Layer"
+  
+# Core Settings
+core:
+  max_concurrent_tasks: 10
+  task_timeout: 600  # seconds
+  retry_attempts: 5
+  log_level: "INFO"
+  
+# Data Collection Settings
+data_collection:
+  update_frequency:
+    realtime: 1      # seconds
+    minute: 60       # seconds
+    daily: 86400     # seconds
+    weekly: 604800   # seconds
+  batch_size: 1000
+  parallel_workers: 4
+  
+# Data Sources
+data_sources:
+  external_apis:
+    - "alphavantage"
+    - "yahoo_finance"
+    - "quandl"
+    - "iex_cloud"
+  internal_sources:
+    - "../../shared/external_apis/"
+  
+# Storage Configuration
+storage:
+  primary_db: "../../Project/database/market_db/"
+  backup_db: "../../Project/database/backup/"
+  cache_db: "../../shared/data_cache/"
+  retention_days: 2555  # 7 years
+  
+# Data Processing
+processing:
+  validation_enabled: true
+  normalization_enabled: true
+  duplicate_detection: true
+  anomaly_detection: true
+  quality_threshold: 0.95
+  
+# Performance Settings
+performance:
+  cache_enabled: true
+  cache_ttl: 300  # 5 minutes
+  compression_enabled: true
+  indexing_enabled: true
+  
+# Monitoring
+monitoring:
+  health_check_interval: 30  # seconds
+  data_quality_checks: true
+  latency_monitoring: true
+  throughput_tracking: true

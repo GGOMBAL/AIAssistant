@@ -1,0 +1,110 @@
+# Agent Interface Definitions - 4 Core Agents
+# Updated: data_agent, strategy_agent, service_agent, helper_agent
+
+data_agent:
+  layer: "Indicator Layer"
+  description: "Data gathering service and technical indicator management"
+  managed_files:
+    - "Project/indicator/technical_indicators.py"
+    - "Project/indicator/fundamental_indicators.py"
+    - "Project/indicator/market_scanner.py"
+    - "Project/service/data_gathering_service.py"
+    - "Project/service/data_processor.py"
+    - "Project/service/data_normalizer.py"
+    - "Project/service/data_validator.py"
+    - "config/data_sources.yaml"
+  
+  collaborates_with:
+    - agent: strategy_agent
+      purpose: "Provide processed market data and indicators"
+      interface: "data_feed"
+      required_data: ["price_data", "volume_data", "technical_indicators", "fundamental_data"]
+    
+    - agent: service_agent
+      purpose: "Supply data for backtesting and trading services"
+      interface: "service_data"
+      required_data: ["historical_data", "real_time_feeds", "market_scans"]
+    
+    - agent: helper_agent
+      purpose: "Receive raw data from external APIs"
+      interface: "raw_data_input"
+      required_data: ["stock_prices", "market_data", "alternative_data"]
+
+strategy_agent:
+  layer: "Strategy Layer"
+  description: "Trading strategy development and signal generation"
+  managed_files:
+    - "Project/strategy/signal_generator.py"
+    - "Project/strategy/position_sizing.py"
+    - "Project/strategy/risk_management.py"
+    - "Project/strategy/portfolio_optimizer.py"
+    - "Project/strategy/strategy_evaluator.py"
+    - "Project/strategy/strategy_factory.py"
+    - "config/strategy_config.yaml"
+  
+  collaborates_with:
+    - agent: data_agent
+      purpose: "Receive market data and indicators for analysis"
+      interface: "data_feed"
+      required_data: ["processed_data", "indicators", "market_conditions"]
+    
+    - agent: service_agent
+      purpose: "Provide signals for backtesting and trading"
+      interface: "strategy_signals"
+      required_data: ["buy_signals", "sell_signals", "position_sizes", "risk_params"]
+
+service_agent:
+  layer: "Service Layer"  
+  description: "Backtesting, trading execution, and database management services"
+  managed_files:
+    - "Project/service/backtester.py"
+    - "Project/service/simulation_engine.py"
+    - "Project/service/trade_executor.py"
+    - "Project/service/position_manager.py"
+    - "Project/service/risk_controller.py"
+    - "Project/database/market_db.py"
+    - "Project/database/strategy_db.py"
+    - "Project/database/trade_db.py"
+    - "Project/database/backup_manager.py"
+    - "config/trading_config.yaml"
+    - "config/database_config.yaml"
+  
+  collaborates_with:
+    - agent: data_agent
+      purpose: "Access historical and real-time data"
+      interface: "service_data"
+      required_data: ["market_history", "live_feeds", "data_quality_metrics"]
+    
+    - agent: strategy_agent
+      purpose: "Execute strategy signals and backtests"
+      interface: "strategy_signals"
+      required_data: ["trading_signals", "strategy_parameters", "risk_rules"]
+    
+    - agent: helper_agent
+      purpose: "Execute trades through broker APIs"
+      interface: "trade_execution"
+      required_data: ["order_routing", "execution_confirmations", "account_status"]
+
+helper_agent:
+  layer: "Service Layer"
+  description: "External API management for brokers and data providers"
+  managed_files:
+    - "Project/service/broker_api_connector.py"
+    - "Project/service/data_provider_api.py"
+    - "Project/service/api_rate_limiter.py"
+    - "Project/service/webhook_handler.py"
+    - "Project/service/external_data_router.py"
+    - "Project/service/api_health_monitor.py"
+    - "config/api_credentials.yaml"
+    - "config/broker_config.yaml"
+  
+  collaborates_with:
+    - agent: data_agent
+      purpose: "Supply external market data"
+      interface: "raw_data_input"
+      required_data: ["market_feeds", "news_data", "economic_indicators"]
+    
+    - agent: service_agent
+      purpose: "Handle trade execution via broker APIs"
+      interface: "trade_execution"
+      required_data: ["order_submissions", "fill_reports", "position_updates"]

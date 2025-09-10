@@ -1,0 +1,239 @@
+# File Ownership and Access Control - 4 Core Agents
+# data_agent, strategy_agent, service_agent, helper_agent
+
+file_ownership:
+  
+  # Data Agent Files
+  data_agent_files:
+    owner: data_agent
+    layer: "Indicator Layer"
+    files:
+      - path: "Project/indicator/technical_indicators.py"
+        permissions: ["read", "write", "execute"]
+        description: "Technical indicator calculations and analysis"
+        
+      - path: "Project/indicator/fundamental_indicators.py"
+        permissions: ["read", "write", "execute"]
+        description: "Fundamental analysis indicators"
+        
+      - path: "Project/indicator/market_scanner.py"
+        permissions: ["read", "write", "execute"]
+        description: "Market scanning and filtering algorithms"
+        
+      - path: "Project/service/data_gathering_service.py"
+        permissions: ["read", "write", "execute"]
+        description: "Centralized data gathering service"
+        
+      - path: "Project/service/data_processor.py"
+        permissions: ["read", "write", "execute"]
+        description: "Data processing and transformation pipelines"
+        
+      - path: "Project/service/data_normalizer.py"
+        permissions: ["read", "write", "execute"]
+        description: "Data normalization and standardization"
+        
+      - path: "Project/service/data_validator.py"
+        permissions: ["read", "write", "execute"]
+        description: "Data quality validation and cleansing"
+        
+      - path: "config/data_sources.yaml"
+        permissions: ["read", "write"]
+        description: "Data source configuration and endpoints"
+    
+    shared_access:
+      - agent: strategy_agent
+        files: ["Project/indicator/technical_indicators.py", "Project/indicator/fundamental_indicators.py"]
+        permissions: ["read"]
+        purpose: "Access indicators for strategy development"
+        
+      - agent: service_agent
+        files: ["Project/service/data_processor.py"]
+        permissions: ["read"]
+        purpose: "Data processing for backtesting and trading"
+
+  # Strategy Agent Files
+  strategy_agent_files:
+    owner: strategy_agent
+    layer: "Strategy Layer"
+    files:
+      - path: "Project/strategy/signal_generator.py"
+        permissions: ["read", "write", "execute"]
+        description: "Trading signal generation algorithms"
+        
+      - path: "Project/strategy/position_sizing.py"
+        permissions: ["read", "write", "execute"]
+        description: "Position sizing and capital allocation"
+        
+      - path: "Project/strategy/risk_management.py"
+        permissions: ["read", "write", "execute"]
+        description: "Risk management rules and controls"
+        
+      - path: "Project/strategy/portfolio_optimizer.py"
+        permissions: ["read", "write", "execute"]
+        description: "Portfolio optimization algorithms"
+        
+      - path: "Project/strategy/strategy_evaluator.py"
+        permissions: ["read", "write", "execute"]
+        description: "Strategy performance evaluation and metrics"
+        
+      - path: "Project/strategy/strategy_factory.py"
+        permissions: ["read", "write", "execute"]
+        description: "Strategy creation and management factory"
+        
+      - path: "config/strategy_config.yaml"
+        permissions: ["read", "write"]
+        description: "Strategy configuration parameters"
+    
+    shared_access:
+      - agent: service_agent
+        files: ["Project/strategy/signal_generator.py", "Project/strategy/risk_management.py"]
+        permissions: ["read", "execute"]
+        purpose: "Execute strategy signals and apply risk rules"
+
+  # Service Agent Files
+  service_agent_files:
+    owner: service_agent
+    layer: "Service Layer"
+    files:
+      - path: "Project/service/backtester.py"
+        permissions: ["read", "write", "execute"]
+        description: "Strategy backtesting engine"
+        
+      - path: "Project/service/simulation_engine.py"
+        permissions: ["read", "write", "execute"]
+        description: "Trading simulation and scenario analysis"
+        
+      - path: "Project/service/trade_executor.py"
+        permissions: ["read", "write", "execute"]
+        description: "Trade execution management"
+        
+      - path: "Project/service/position_manager.py"
+        permissions: ["read", "write", "execute"]
+        description: "Position tracking and management"
+        
+      - path: "Project/service/risk_controller.py"
+        permissions: ["read", "write", "execute"]
+        description: "Real-time risk control and monitoring"
+        
+      - path: "Project/database/market_db.py"
+        permissions: ["read", "write", "execute"]
+        description: "Market data database interface"
+        
+      - path: "Project/database/strategy_db.py"
+        permissions: ["read", "write", "execute"]
+        description: "Strategy data database interface"
+        
+      - path: "Project/database/trade_db.py"
+        permissions: ["read", "write", "execute"]
+        description: "Trade execution database interface"
+        
+      - path: "Project/database/backup_manager.py"
+        permissions: ["read", "write", "execute"]
+        description: "Database backup and recovery services"
+        
+      - path: "config/trading_config.yaml"
+        permissions: ["read", "write"]
+        description: "Trading system configuration"
+        
+      - path: "config/database_config.yaml"
+        permissions: ["read", "write"]
+        description: "Database connection and settings"
+    
+    shared_access:
+      - agent: data_agent
+        files: ["Project/database/market_db.py"]
+        permissions: ["read", "write"]
+        purpose: "Store and retrieve market data"
+        
+      - agent: strategy_agent
+        files: ["Project/database/strategy_db.py", "Project/database/market_db.py"]
+        permissions: ["read", "write"]
+        purpose: "Access historical data and store strategy results"
+
+  # Helper Agent Files
+  helper_agent_files:
+    owner: helper_agent
+    layer: "Service Layer"
+    files:
+      - path: "Project/service/broker_api_connector.py"
+        permissions: ["read", "write", "execute"]
+        description: "Broker API connection and management"
+        
+      - path: "Project/service/data_provider_api.py"
+        permissions: ["read", "write", "execute"]
+        description: "External data provider API integrations"
+        
+      - path: "Project/service/api_rate_limiter.py"
+        permissions: ["read", "write", "execute"]
+        description: "API rate limiting and quota management"
+        
+      - path: "Project/service/webhook_handler.py"
+        permissions: ["read", "write", "execute"]
+        description: "Webhook processing and event handling"
+        
+      - path: "Project/service/external_data_router.py"
+        permissions: ["read", "write", "execute"]
+        description: "External data routing and distribution"
+        
+      - path: "Project/service/api_health_monitor.py"
+        permissions: ["read", "write", "execute"]
+        description: "API health monitoring and alerting"
+        
+      - path: "config/api_credentials.yaml"
+        permissions: ["read", "write"]
+        description: "API credentials and authentication"
+        
+      - path: "config/broker_config.yaml"
+        permissions: ["read", "write"]
+        description: "Broker-specific configuration settings"
+    
+    shared_access:
+      - agent: data_agent
+        files: ["Project/service/data_provider_api.py"]
+        permissions: ["read"]
+        purpose: "Understanding external data sources"
+        
+      - agent: service_agent
+        files: ["Project/service/broker_api_connector.py"]
+        permissions: ["read", "execute"]
+        purpose: "Execute trades through broker APIs"
+
+# Access Control Rules
+access_control:
+  global_rules:
+    - rule: "No agent can modify files owned by another agent without explicit permission"
+    - rule: "Shared access must be explicitly defined in the shared_access section"
+    - rule: "Configuration files require special approval for modifications"
+    - rule: "All file operations must be logged for audit purposes"
+  
+  emergency_access:
+    - agent: orchestrator
+      description: "Emergency access to all files for system recovery"
+      requires_approval: true
+      
+  read_only_access:
+    shared_configs:
+      - "config/system_config.yaml"
+      - "config/logging_config.yaml"
+      - "shared/constants.py"
+    agents: ["all"]
+
+# File Dependencies
+dependencies:
+  strategy_agent:
+    depends_on:
+      - owner: data_agent
+        files: ["Project/service/data_processor.py"]
+        reason: "Requires processed market data"
+        
+  trade_agent:
+    depends_on:
+      - owner: strategy_agent
+        files: ["Project/strategy/signal_generator.py"]
+        reason: "Needs trading signals"
+        
+  model_agent:
+    depends_on:
+      - owner: data_agent
+        files: ["Project/service/data_processor.py"]
+        reason: "Requires training data"

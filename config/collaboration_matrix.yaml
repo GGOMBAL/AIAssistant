@@ -1,0 +1,190 @@
+# Agent Collaboration Matrix - 4 Core Agents
+# data_agent, strategy_agent, service_agent, helper_agent
+
+collaboration_matrix:
+  
+  # Data Agent Collaborations
+  data_agent:
+    layer: "Indicator Layer"
+    primary_collaborations:
+      - partner: strategy_agent
+        relationship: "data_provider"
+        communication_protocol: "streaming"
+        data_format: "json"
+        frequency: "real_time"
+        interface_file: "interfaces/data_strategy_interface.py"
+        data_flow: "processed_data → strategy_analysis"
+        
+      - partner: service_agent
+        relationship: "data_supplier"
+        communication_protocol: "request_response"
+        data_format: "parquet"
+        frequency: "on_demand"
+        interface_file: "interfaces/data_service_interface.py"
+        data_flow: "historical_data → backtesting/trading"
+    
+    secondary_collaborations:
+      - partner: helper_agent
+        relationship: "data_consumer"
+        communication_protocol: "webhook"
+        data_format: "json"
+        frequency: "continuous"
+        data_flow: "external_data → data_processing"
+
+  # Strategy Agent Collaborations  
+  strategy_agent:
+    layer: "Strategy Layer"
+    primary_collaborations:
+      - partner: data_agent
+        relationship: "data_consumer"
+        communication_protocol: "streaming"
+        data_format: "json"
+        frequency: "real_time"
+        interface_file: "interfaces/strategy_data_interface.py"
+        data_flow: "market_indicators → signal_generation"
+        
+      - partner: service_agent
+        relationship: "signal_provider"
+        communication_protocol: "event_driven"
+        data_format: "json"
+        frequency: "on_signal"
+        interface_file: "interfaces/strategy_service_interface.py"
+        data_flow: "trading_signals → execution/backtesting"
+
+  # Service Agent Collaborations
+  service_agent:
+    layer: "Service Layer"
+    primary_collaborations:
+      - partner: data_agent
+        relationship: "data_client"
+        communication_protocol: "request_response"
+        data_format: "parquet"
+        frequency: "on_demand"
+        interface_file: "interfaces/service_data_interface.py"
+        data_flow: "data_requests → historical_analysis"
+        
+      - partner: strategy_agent
+        relationship: "signal_consumer"
+        communication_protocol: "event_driven"
+        data_format: "json"
+        frequency: "on_signal"
+        interface_file: "interfaces/service_strategy_interface.py"
+        data_flow: "strategy_signals → trade_execution"
+        
+      - partner: helper_agent
+        relationship: "api_client"
+        communication_protocol: "synchronous_call"
+        data_format: "json"
+        frequency: "on_trade"
+        interface_file: "interfaces/service_helper_interface.py"
+        data_flow: "trade_orders → broker_execution"
+
+  # Helper Agent Collaborations
+  helper_agent:
+    layer: "Service Layer"
+    primary_collaborations:
+      - partner: data_agent
+        relationship: "data_provider"
+        communication_protocol: "webhook"
+        data_format: "json"
+        frequency: "continuous"
+        interface_file: "interfaces/helper_data_interface.py"
+        data_flow: "external_apis → raw_data"
+        
+      - partner: service_agent
+        relationship: "api_service"
+        communication_protocol: "synchronous_call"
+        data_format: "json"
+        frequency: "on_request"
+        interface_file: "interfaces/helper_service_interface.py"
+        data_flow: "broker_apis → trade_confirmations"
+
+# Communication Protocols Definition
+protocols:
+  request_response:
+    description: "Synchronous request-response pattern"
+    timeout: 30
+    retry_count: 3
+    
+  async_message:
+    description: "Asynchronous message passing"
+    queue_size: 1000
+    persistence: true
+    
+  publish_subscribe:
+    description: "Event-driven publish-subscribe"
+    topics: ["signals", "alerts", "status"]
+    buffer_size: 500
+    
+  streaming:
+    description: "Continuous data streaming"
+    buffer_size: 10000
+    compression: true
+    
+  task_delegation:
+    description: "Task delegation with status tracking"
+    priority_levels: 3
+    status_updates: true
+
+# Interface Standards
+interface_standards:
+  data_formats:
+    json:
+      schema_validation: required
+      compression: optional
+      
+    binary:
+      format: "protobuf"
+      compression: required
+      
+    parquet:
+      compression: "snappy"
+      partitioning: "date"
+      
+    pickle:
+      security: "signed"
+      version: "protocol_5"
+
+  communication_patterns:
+    synchronous:
+      max_wait_time: 30
+      error_handling: "exception_propagation"
+      
+    asynchronous:
+      message_persistence: true
+      dead_letter_queue: true
+      
+    streaming:
+      backpressure_handling: true
+      checkpointing: true
+
+# Collaboration Rules
+collaboration_rules:
+  data_flow:
+    - rule: "Raw data flows: GetStockData → Data → Strategy/Model"
+    - rule: "Signals flow: Strategy → Trade"
+    - rule: "Results flow: All → Evaluation"
+    
+  access_patterns:
+    - rule: "Only primary collaborations can initiate communication"
+    - rule: "Secondary collaborations are response-only"
+    - rule: "Cross-layer communication requires orchestrator approval"
+    
+  failure_handling:
+    - rule: "Each agent must handle partner unavailability gracefully"
+    - rule: "Critical data dependencies have fallback mechanisms"
+    - rule: "Communication failures trigger automatic retry with backoff"
+
+# Monitoring and Metrics
+monitoring:
+  communication_metrics:
+    - latency
+    - throughput
+    - error_rate
+    - message_queue_depth
+    
+  collaboration_health:
+    - partner_availability
+    - data_freshness
+    - interface_compatibility
+    - protocol_compliance

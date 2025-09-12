@@ -205,3 +205,16 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Test files and directories
+Test/
+test/
+tests/
+*_test.py
+*_test_*.py
+test_*.py
+
+# Sensitive configuration files
+myStockInfo.yaml
+*.credentials
+*.secrets

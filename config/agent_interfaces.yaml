@@ -89,14 +89,42 @@ helper_agent:
   layer: "Service Layer"
   description: "External API management for brokers and data providers"
   managed_files:
-    - "Project/service/broker_api_connector.py"
-    - "Project/service/data_provider_api.py"
-    - "Project/service/api_rate_limiter.py"
-    - "Project/service/webhook_handler.py"
-    - "Project/service/external_data_router.py"
-    - "Project/service/api_health_monitor.py"
+    - "Project/Helper/broker_api_connector.py"
+    - "Project/Helper/kis_api_helper_us.py"
+    - "Project/Helper/kis_common.py"
+    - "Project/Helper/data_provider_api.py"
+    - "Project/Helper/yfinance_helper.py"
+    - "Project/Helper/telegram_messenger.py"
     - "config/api_credentials.yaml"
     - "config/broker_config.yaml"
+  
+  capabilities:
+    - "broker_api_management"
+    - "external_data_collection"
+    - "api_rate_limiting"
+    - "webhook_handling"
+    - "health_monitoring"
+    - "data_routing"
+  
+  services:
+    broker_apis:
+      - "KIS (Korea Investment & Securities)"
+      - "LS Securities"
+    
+    data_providers:
+      - "Alpha Vantage"
+      - "Yahoo Finance"
+      - "Economic Data APIs"
+    
+    communication:
+      - "Telegram Bot"
+      - "Webhooks"
+      - "Email Notifications"
+    
+    monitoring:
+      - "API Health Checks"
+      - "Performance Metrics"
+      - "Error Tracking"
   
   collaborates_with:
     - agent: data_agent

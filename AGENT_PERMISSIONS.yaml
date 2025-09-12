@@ -1,0 +1,232 @@
+# AI Assistant Multi-Agent System - Permission Configuration
+# Defines access control for each agent to project files and resources
+
+version: "1.0"
+last_updated: "2025-09-12"
+
+# Agent Permission Definitions
+agents:
+  data_agent:
+    name: "Data Agent"
+    model: "Claude-3-Opus-20240229"
+    priority: 1
+    layer: "Indicator"
+    
+    # Full Read/Write Access
+    managed_files:
+      - "Project/indicator/**/*.py"
+      - "Project/service/data_gathering_service.py" 
+      - "Project/service/data_processor.py"
+      - "Data/**/*"
+      
+    # Read-Only Access
+    read_only_access:
+      - "Project/Helper/**/*.py"      # Helper functions (read-only)
+      - "Project/strategy/**/*.py"     # Strategy files (read-only)
+      - "Project/service/**/*.py"      # Other service files (read-only)
+      - "myStockInfo.yaml"            # Configuration (read-only)
+      - "HELPER_FUNCTIONS_MANUAL.md"  # Helper documentation (read-only)
+      
+    # No Access
+    restricted_access:
+      - "Project/database/**/*.py"    # Database layer restricted
+      
+  strategy_agent:
+    name: "Strategy Agent"
+    model: "Claude-3-Opus-20240229"
+    priority: 1
+    layer: "Strategy"
+    
+    # Full Read/Write Access
+    managed_files:
+      - "Project/strategy/**/*.py"
+      
+    # Read-Only Access  
+    read_only_access:
+      - "Project/Helper/**/*.py"      # Helper functions (read-only)
+      - "Project/indicator/**/*.py"   # Indicator files (read-only)
+      - "Project/service/**/*.py"     # Service files (read-only)
+      - "myStockInfo.yaml"           # Configuration (read-only)
+      - "HELPER_FUNCTIONS_MANUAL.md" # Helper documentation (read-only)
+      - "Data/**/*"                  # Data files (read-only)
+      
+    # No Access
+    restricted_access:
+      - "Project/database/**/*.py"   # Database layer restricted
+      
+  service_agent:
+    name: "Service Agent"
+    model: "Claude-3-5-Sonnet-20241022"
+    priority: 2
+    layer: "Service"
+    
+    # Full Read/Write Access
+    managed_files:
+      - "Project/service/**/*.py"
+      - "Project/database/**/*.py"
+      - "Database/**/*"
+      - "Backtest/**/*"
+      
+    # Read-Only Access
+    read_only_access:
+      - "Project/Helper/**/*.py"      # Helper functions (read-only)
+      - "Project/indicator/**/*.py"   # Indicator files (read-only)
+      - "Project/strategy/**/*.py"    # Strategy files (read-only)
+      - "myStockInfo.yaml"           # Configuration (read-only)
+      - "HELPER_FUNCTIONS_MANUAL.md" # Helper documentation (read-only)
+      - "Data/**/*"                  # Data files (read-only)
+      
+    # No Access
+    restricted_access: []
+    
+  helper_agent:
+    name: "Helper Agent"
+    model: "Claude-3-5-Sonnet-20241022"
+    priority: 2
+    layer: "Helper"
+    
+    # Full Read/Write Access - EXCLUSIVE CONTROL
+    managed_files:
+      - "Project/Helper/**/*.py"                    # All Helper Python files
+      - "Project/Helper/**/*.yaml"                  # Helper configuration files
+      - "Project/Helper/**/*.json"                  # Helper data files
+      - "HELPER_FUNCTIONS_MANUAL.md"               # Helper documentation
+      - "Test/**/*helper*"                         # Helper-related tests
+      - "Test/**/*precision*"                      # Precision tests
+      - "Test/**/*comparison*"                     # Function comparison tests
+      - "Test/**/*focused*"                       # Focused tests
+      - "myStockInfo.yaml"                        # API credentials (exclusive)
+      
+    # Read-Only Access
+    read_only_access:
+      - "Project/indicator/**/*.py"   # Can read indicator files for integration
+      - "Project/strategy/**/*.py"    # Can read strategy files for integration  
+      - "Project/service/**/*.py"     # Can read service files for integration
+      - "Project/database/**/*.py"    # Can read database files for integration
+      - "README.md"                  # Project documentation
+      - "CLEANUP_SUMMARY.md"         # Architecture documentation
+      
+    # No Access
+    restricted_access:
+      - "Database/**/*"              # No direct database access
+      - "Backtest/**/*"             # No backtest data access
+      
+# Cross-Agent Access Rules
+cross_agent_access:
+  helper_functions:
+    description: "Helper functions can be called by other agents but only modified by helper_agent"
+    read_access: ["data_agent", "strategy_agent", "service_agent"]
+    write_access: ["helper_agent"]
+    
+  configuration_files:
+    description: "Configuration files managed exclusively by helper_agent"
+    read_access: ["data_agent", "strategy_agent", "service_agent"] 
+    write_access: ["helper_agent"]
+    
+  api_credentials:
+    description: "API credentials managed exclusively by helper_agent"
+    read_access: []  # No direct access - only through helper functions
+    write_access: ["helper_agent"]
+
+# File Operation Permissions
+file_operations:
+  helper_agent:
+    allowed_operations:
+      - "create"     # Can create new helper files
+      - "read"       # Can read all helper files
+      - "update"     # Can modify helper files
+      - "delete"     # Can remove helper files
+      - "execute"    # Can run helper scripts
+      - "test"       # Can run helper tests
+      
+  other_agents:
+    helper_files_operations:
+      - "read"       # Read-only access to helper files
+      - "execute"    # Can call helper functions
+      
+    restricted_operations:
+      - "update"     # Cannot modify helper files
+      - "delete"     # Cannot delete helper files
+      - "create"     # Cannot create helper files
+
+# Security Rules  
+security_rules:
+  api_credentials:
+    - "Only helper_agent can modify myStockInfo.yaml"
+    - "Other agents must use helper functions to access APIs"
+    - "No hardcoding of API keys in non-helper files"
+    
+  helper_functions:
+    - "Only helper_agent can modify helper function implementations"
+    - "Other agents can only call helper functions through defined interfaces"
+    - "No direct imports of helper internals by other agents"
+    
+  testing:
+    - "Only helper_agent can modify helper test files"
+    - "Other agents can read test results but not modify test code"
+    - "Helper_agent maintains test coverage and validation"
+
+# Integration Guidelines
+integration:
+  calling_helper_functions:
+    description: "How other agents should use helper functions"
+    pattern: |
+      # Correct way to use helper functions from other agents
+      from Project.Helper.yfinance_helper import YFinanceHelper
+      
+      yf = YFinanceHelper()
+      price = yf.get_current_price("AAPL")  # Read-only usage
+      
+      # DO NOT modify helper code from other agents
+      
+  error_handling:
+    description: "Error handling when using helper functions"
+    pattern: |
+      try:
+          result = helper_function()
+          if result.get('success'):
+              # Handle successful result
+              data = result['data']
+          else:
+              # Handle error through proper logging
+              logger.error(f"Helper function failed: {result.get('error')}")
+      except Exception as e:
+          logger.error(f"Error calling helper function: {e}")
+
+# Validation Rules
+validation:
+  before_deployment:
+    - "helper_agent must validate all helper functions"
+    - "All helper tests must pass before production"
+    - "API credentials must be properly configured"
+    - "Cross-agent integration tests must pass"
+    
+  ongoing_maintenance:
+    - "helper_agent responsible for helper function updates"
+    - "helper_agent manages API rate limits and health monitoring"
+    - "helper_agent maintains helper documentation"
+
+# Enforcement
+enforcement:
+  automated_checks:
+    - "Git hooks to prevent unauthorized helper file modifications"
+    - "Code review requirements for helper file changes"
+    - "Automated testing of helper functions on changes"
+    
+  manual_review:
+    - "helper_agent must approve all helper-related changes"
+    - "Architecture reviews for cross-agent integration changes"
+    - "Security reviews for credential and API changes"
+
+# Documentation Requirements
+documentation:
+  helper_agent_responsibilities:
+    - "Maintain HELPER_FUNCTIONS_MANUAL.md"
+    - "Document all API integrations and credentials"
+    - "Provide integration examples for other agents"
+    - "Maintain test documentation and coverage reports"
+    
+  other_agents_responsibilities:
+    - "Document helper function usage in their code"
+    - "Report helper function issues to helper_agent"
+    - "Follow integration patterns defined by helper_agent"

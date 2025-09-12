@@ -1,0 +1,22 @@
+{
+  "owner_agent": "helper_agent",
+  "exclusive_control": true,
+  "created_date": "2025-09-12T07:59:18.656425",
+  "managed_files": [
+    "Project/Helper/**/*.py",
+    "HELPER_FUNCTIONS_MANUAL.md",
+    "myStockInfo.yaml",
+    "Test/**/*helper*",
+    "Test/**/*precision*",
+    "Test/**/*comparison*",
+    "Test/**/*focused*"
+  ],
+  "access_rules": {
+    "helper_agent": "full_rw",
+    "data_agent": "read_only_functions",
+    "strategy_agent": "read_only_functions",
+    "service_agent": "read_only_functions"
+  },
+  "security_level": "high",
+  "api_credential_protection": true
+}

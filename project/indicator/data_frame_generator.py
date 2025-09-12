@@ -1,0 +1,505 @@
+"""
+Data Frame Generator - Strategy Agent Management
+Based on refer/BackTest/TestMain.py
+Generates df_W, df_RS, df_D, df_E, df_F data frames for indicator processing
+"""
+
+import pandas as pd
+import copy
+import concurrent.futures
+from datetime import datetime, timedelta
+from typing import Dict, List, Tuple, Optional, Any
+import logging
+
+# Setup logging
+logger = logging.getLogger(__name__)
+
+class DataFrameGenerator:
+    """
+    Generates trading data frames based on refer/BackTest/TestMain.py logic
+    Strategy Agent has exclusive management of this class
+    """
+    
+    def __init__(self, universe: List[str], market: str, area: str, 
+                 start_day: datetime, end_day: datetime):
+        """
+        Initialize DataFrameGenerator
+        
+        Args:
+            universe: List of stock symbols
+            market: Market identifier
+            area: Market area (US, KR, etc)
+            start_day: Start date for data
+            end_day: End date for data
+        """
+        pd.set_option('future.no_silent_downcasting', True)
+        
+        self.market = market
+        self.area = area
+        self.start_day = start_day
+        self.data_start_day = start_day - timedelta(days=365*3)  # 3 years of historical data
+        self.end_day = end_day
+        self.universe = universe
+        
+        # Initialize data frames
+        self.df_W = {}   # Weekly data
+        self.df_RS = {}  # Relative strength data  
+        self.df_D = {}   # Daily data
+        self.df_E = {}   # Earnings data (US only)
+        self.df_F = {}   # Fundamental data (US only)
+        
+        logger.info(f"Initialized DataFrameGenerator for {area} market with {len(universe)} symbols")
+    
+    def read_database_task(self, market: str, area: str, data_type: str, 
+                          universe: List[str], data_start_day: datetime, 
+                          end_day: datetime) -> Tuple[str, Dict, List[str]]:
+        """
+        Single database read task (simulated - based on refer implementation)
+        
+        Args:
+            market: Market identifier
+            area: Market area
+            data_type: Type of data (W, RS, AD, E, F)
+            universe: List of symbols
+            data_start_day: Start date
+            end_day: End date
+            
+        Returns:
+            Tuple of (data_type, dataframe_dict, updated_universe)
+        """
+        try:
+            # This would normally connect to MongoDB
+            # For now, we'll simulate the data structure based on Helper functions
+            logger.info(f"Reading {data_type} data for {area} market")
+            
+            # Use Helper functions to get real market data
+            if data_type in ["W", "AD"]:  # Weekly and Daily data
+                df_dict = self._get_market_data_from_helper(universe, data_type)
+                updated_universe = list(df_dict.keys())
+                return data_type, df_dict, updated_universe
+            else:
+                # For RS, E, F data types, create placeholder structure
+                df_dict = {symbol: self._create_placeholder_dataframe(data_start_day, end_day) 
+                          for symbol in universe}
+                updated_universe = universe
+                return data_type, df_dict, updated_universe
+                
+        except Exception as e:
+            logger.error(f"Error reading {data_type} data: {e}")
+            # Return empty structure on error
+            df_dict = {symbol: pd.DataFrame() for symbol in universe}
+            return data_type, df_dict, universe
+    
+    def _get_market_data_from_helper(self, universe: List[str], data_type: str) -> Dict[str, pd.DataFrame]:
+        """
+        Get real market data using Helper functions
+        
+        Args:
+            universe: List of stock symbols
+            data_type: Data type (W for weekly, AD for daily)
+            
+        Returns:
+            Dictionary mapping symbols to DataFrames
+        """
+        try:
+            # Import Helper functions (read-only access)
+            from Project.Helper.yfinance_helper import YFinanceHelper
+            
+            yf = YFinanceHelper()
+            df_dict = {}
+            
+            # Determine period based on data type
+            period_map = {
+                "W": "1wk",  # Weekly data
+                "AD": "1d"   # Daily data (AD = Adjusted Daily)
+            }
+            
+            period = period_map.get(data_type, "1d")
+            
+            for symbol in universe[:5]:  # Limit to first 5 for testing
+                try:
+                    # Get OHLCV data using Helper function
+                    df = yf.get_ohlcv(symbol, "D", self.data_start_day, self.end_day)
+                    
+                    if not df.empty:
+                        # Ensure required columns exist
+                        required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+                        missing_columns = [col for col in required_columns if col not in df.columns]
+                        
+                        if not missing_columns:
+                            # Rename to match refer format
+                            df = df.rename(columns={
+                                'Open': 'ad_open',
+                                'High': 'ad_high', 
+                                'Low': 'ad_low',
+                                'Close': 'ad_close',
+                                'Volume': 'volume'
+                            })
+                            
+                            # Add dividends and splits if not present
+                            if 'Dividends' in df.columns:
+                                df['dividend_factor'] = df['Dividends']
+                            else:
+                                df['dividend_factor'] = 0.0
+                                
+                            if 'Stock Splits' in df.columns:
+                                df['split_factor'] = df['Stock Splits']
+                            else:
+                                df['split_factor'] = 0.0
+                            
+                            df_dict[symbol] = df
+                            logger.info(f"Retrieved {len(df)} records for {symbol}")
+                        else:
+                            logger.warning(f"Missing columns for {symbol}: {missing_columns}")
+                    else:
+                        logger.warning(f"No data retrieved for {symbol}")
+                        
+                except Exception as e:
+                    logger.error(f"Error getting data for {symbol}: {e}")
+                    continue
+            
+            return df_dict
+            
+        except Exception as e:
+            logger.error(f"Error in _get_market_data_from_helper: {e}")
+            return {}
+    
+    def _create_placeholder_dataframe(self, start_date: datetime, end_date: datetime) -> pd.DataFrame:
+        """
+        Create placeholder DataFrame for data types not available from Helper
+        
+        Args:
+            start_date: Start date
+            end_date: End date
+            
+        Returns:
+            Placeholder DataFrame
+        """
+        date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+        
+        # Create basic structure matching refer format
+        df = pd.DataFrame(index=date_range)
+        df['value'] = 0.0
+        df['indicator'] = 0.0
+        
+        return df
+    
+    def load_data_from_database(self) -> None:
+        """
+        Load data from database using parallel processing (based on refer implementation)
+        """
+        logger.info("Starting parallel database loading...")
+        
+        # Basic data types
+        data_types = ["W", "RS", "AD"]
+        
+        # US area gets additional data types  
+        if self.area == 'US':
+            data_types.extend(["E", "F"])
+        
+        # Parallel execution using ThreadPoolExecutor
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(data_types)) as executor:
+            # Submit all tasks
+            futures = {
+                executor.submit(
+                    self.read_database_task,
+                    self.market,
+                    self.area, 
+                    data_type,
+                    self.universe,
+                    self.data_start_day,
+                    self.end_day
+                ): data_type for data_type in data_types
+            }
+            
+            # Store updated universes for each data type
+            updated_universes = {}
+            
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(futures):
+                data_type = futures[future]
+                try:
+                    _, df, updated_universe = future.result()
+                    
+                    # Assign to appropriate attribute
+                    if data_type == "W":
+                        self.df_W = df
+                        updated_universes['updated_universe_W'] = updated_universe
+                    elif data_type == "RS":
+                        self.df_RS = df
+                        updated_universes['updated_universe_RS'] = updated_universe
+                    elif data_type == "AD":
+                        self.df_D = df
+                        updated_universes['updated_universe_AD'] = updated_universe
+                    elif data_type == "E":
+                        self.df_E = df
+                        updated_universes['updated_universe_E'] = updated_universe
+                    elif data_type == "F":
+                        self.df_F = df
+                        updated_universes['updated_universe_F'] = updated_universe
+                    
+                    logger.info(f"Loaded {data_type} data successfully")
+                    
+                except Exception as e:
+                    logger.error(f"Error loading {data_type} data: {e}")
+        
+        # Find common tickers across all datasets
+        if updated_universes:
+            common_tickers = set(list(updated_universes.values())[0])
+            for universe in updated_universes.values():
+                common_tickers = common_tickers.intersection(set(universe))
+            self.universe = list(common_tickers)
+        
+        logger.info(f"Database loading complete. Common tickers: {len(self.universe)}")
+        
+        # Apply KR-specific formatting if needed
+        if self.area == 'KR':
+            self.universe = ['A' + stock for stock in self.universe]
+        
+        # Remove tickers not in common universe from all dataframes
+        self._cleanup_dataframes()
+        
+        # Remove duplicates and apply post-processing
+        self._post_process_dataframes()
+    
+    def _cleanup_dataframes(self) -> None:
+        """Remove tickers not in common universe from all dataframes"""
+        universe_set = set(self.universe)
+        
+        # Clean df_W
+        if hasattr(self, 'df_W') and self.df_W:
+            keys_to_remove = [key for key in self.df_W.keys() if key not in universe_set]
+            for key in keys_to_remove:
+                del self.df_W[key]
+        
+        # Clean df_RS
+        if hasattr(self, 'df_RS') and self.df_RS:
+            keys_to_remove = [key for key in self.df_RS.keys() if key not in universe_set]
+            for key in keys_to_remove:
+                del self.df_RS[key]
+        
+        # Clean df_D
+        if hasattr(self, 'df_D') and self.df_D:
+            keys_to_remove = [key for key in self.df_D.keys() if key not in universe_set]
+            for key in keys_to_remove:
+                del self.df_D[key]
+        
+        # Clean US-specific dataframes
+        if self.area == 'US':
+            if hasattr(self, 'df_E') and self.df_E:
+                keys_to_remove = [key for key in self.df_E.keys() if key not in universe_set]
+                for key in keys_to_remove:
+                    del self.df_E[key]
+            
+            if hasattr(self, 'df_F') and self.df_F:
+                keys_to_remove = [key for key in self.df_F.keys() if key not in universe_set]
+                for key in keys_to_remove:
+                    del self.df_F[key]
+    
+    def _post_process_dataframes(self) -> None:
+        """Remove duplicates and apply post-processing (based on refer logic)"""
+        logger.info("Post-processing dataframes...")
+        
+        # Remove duplicates from all dataframes
+        for stock in self.universe:
+            try:
+                if stock in self.df_W:
+                    self.df_W[stock] = self.df_W[stock][~self.df_W[stock].index.duplicated()]
+                    
+                if stock in self.df_RS:
+                    self.df_RS[stock] = self.df_RS[stock][~self.df_RS[stock].index.duplicated()]
+                    
+                if stock in self.df_D:
+                    self.df_D[stock] = self.df_D[stock][~self.df_D[stock].index.duplicated()]
+                
+                # US-specific processing
+                if self.area == 'US':
+                    if stock in self.df_E:
+                        self.df_E[stock] = self.df_E[stock][~self.df_E[stock].index.duplicated()]
+                    
+                    if stock in self.df_F:
+                        self.df_F[stock] = self.df_F[stock][~self.df_F[stock].index.duplicated()]
+                        
+            except Exception as e:
+                logger.error(f"Error processing {stock}: {e}")
+        
+        # Reindex and merge fundamental data for US market (based on refer logic)
+        if self.area == 'US':
+            self._process_fundamental_data()
+    
+    def _process_fundamental_data(self) -> None:
+        """Process fundamental data for US market (based on refer logic)"""
+        logger.info("Processing US fundamental data...")
+        
+        for stock in self.universe:
+            try:
+                if stock in self.df_F and stock in self.df_W:
+                    # Reindex fundamental data to match weekly data
+                    self.df_F[stock] = self.df_F[stock].reindex(
+                        self.df_W[stock].index, method='ffill'
+                    )
+                    
+                    # Merge with weekly close price
+                    if 'ad_close' in self.df_W[stock].columns:
+                        self.df_F[stock] = pd.concat([
+                            self.df_W[stock]['ad_close'], 
+                            self.df_F[stock]
+                        ], axis=1)
+                    
+                    # Forward fill missing values
+                    self.df_F[stock].ffill(inplace=True)
+                    
+                    # Remove duplicates
+                    self.df_F[stock] = self.df_F[stock][~self.df_F[stock].index.duplicated()]
+                    
+            except Exception as e:
+                logger.error(f"Error processing fundamental data for {stock}: {e}")
+    
+    def get_strategy_data(self, strategy_name: str = 'A') -> Tuple[Dict, List[str]]:
+        """
+        Prepare data for strategy processing (based on refer RunStrategy logic)
+        
+        Args:
+            strategy_name: Name of strategy to run
+            
+        Returns:
+            Tuple of (processed_dataframes_dict, updated_universe)
+        """
+        logger.info(f"Preparing data for strategy {strategy_name}")
+        
+        # Deep copy dataframes for strategy processing
+        dfW1 = copy.deepcopy(self.df_W)
+        dfD1 = copy.deepcopy(self.df_D)  
+        dfR1 = copy.deepcopy(self.df_RS)
+        
+        if self.area == 'US':
+            dfE1 = copy.deepcopy(self.df_E)
+            dfF1 = copy.deepcopy(self.df_F)
+        else:
+            dfE1 = {}
+            dfF1 = {}
+        
+        universe1 = copy.deepcopy(self.universe)
+        
+        # Find common keys across all dictionaries
+        if self.area == 'US':
+            dicts = [dfW1, dfD1, dfR1, dfE1, dfF1]
+        else:
+            dicts = [dfW1, dfD1, dfR1]
+        
+        # Calculate common keys
+        common_keys = set(dicts[0]).intersection(*[set(d) for d in dicts[1:]])
+        
+        # Remove non-common keys from each dictionary
+        for d in dicts:
+            for key in list(d.keys()):
+                if key not in common_keys:
+                    del d[key]
+        
+        logger.info(f"Strategy data prepared. Common keys: {len(common_keys)}")
+        
+        return {
+            'df_W': dfW1,
+            'df_D': dfD1, 
+            'df_RS': dfR1,
+            'df_E': dfE1,
+            'df_F': dfF1,
+            'universe': universe1,
+            'area': self.area
+        }, list(common_keys)
+    
+    def filter_by_date_range(self, data_dict: Dict, start_day: datetime, end_day: datetime) -> Dict:
+        """
+        Filter dataframes by date range
+        
+        Args:
+            data_dict: Dictionary containing dataframes
+            start_day: Start date
+            end_day: End date
+            
+        Returns:
+            Filtered data dictionary
+        """
+        logger.info(f"Filtering data by date range: {start_day} to {end_day}")
+        
+        filtered_data = {}
+        
+        for key, df_dict in data_dict.items():
+            if key == 'universe' or key == 'area':
+                filtered_data[key] = df_dict
+                continue
+                
+            if isinstance(df_dict, dict):
+                filtered_df_dict = {}
+                for stock, df in df_dict.items():
+                    try:
+                        if not df.empty:
+                            filtered_df = df[
+                                (df.index >= start_day) & (df.index <= end_day)
+                            ]
+                            filtered_df_dict[stock] = filtered_df
+                    except Exception as e:
+                        logger.error(f"Error filtering {stock} in {key}: {e}")
+                        filtered_df_dict[stock] = df
+                
+                filtered_data[key] = filtered_df_dict
+            else:
+                filtered_data[key] = df_dict
+        
+        return filtered_data
+    
+    def get_dataframes(self) -> Dict[str, Dict]:
+        """
+        Get all generated dataframes
+        
+        Returns:
+            Dictionary containing all dataframes
+        """
+        return {
+            'df_W': self.df_W,
+            'df_RS': self.df_RS, 
+            'df_D': self.df_D,
+            'df_E': self.df_E if self.area == 'US' else {},
+            'df_F': self.df_F if self.area == 'US' else {},
+            'universe': self.universe,
+            'area': self.area,
+            'market': self.market
+        }
+    
+    def get_summary(self) -> Dict[str, Any]:
+        """
+        Get summary information about loaded data
+        
+        Returns:
+            Summary dictionary
+        """
+        summary = {
+            'universe_count': len(self.universe),
+            'area': self.area,
+            'market': self.market,
+            'date_range': f"{self.start_day} to {self.end_day}",
+            'data_types': []
+        }
+        
+        if self.df_W:
+            summary['data_types'].append('Weekly (W)')
+            summary['weekly_symbols'] = len(self.df_W)
+            
+        if self.df_RS:
+            summary['data_types'].append('Relative Strength (RS)')
+            summary['rs_symbols'] = len(self.df_RS)
+            
+        if self.df_D:
+            summary['data_types'].append('Daily (D)')
+            summary['daily_symbols'] = len(self.df_D)
+            
+        if self.area == 'US':
+            if self.df_E:
+                summary['data_types'].append('Earnings (E)')
+                summary['earnings_symbols'] = len(self.df_E)
+                
+            if self.df_F:
+                summary['data_types'].append('Fundamental (F)')
+                summary['fundamental_symbols'] = len(self.df_F)
+        
+        return summary

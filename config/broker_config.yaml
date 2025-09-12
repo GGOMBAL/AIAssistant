@@ -1,0 +1,240 @@
+# Broker Configuration for Helper Agent
+# Defines broker-specific settings and trading parameters
+
+# Default Trading Configuration
+default_trading:
+  paper_trading: true  # Set to false for live trading
+  auto_adjust_quantity: true  # Automatically adjust order quantity based on available balance
+  price_adjustment: true  # Automatically adjust prices to valid tick sizes
+  order_timeout: 300  # Order timeout in seconds
+  max_retry_attempts: 3
+  retry_delay: 5  # seconds
+
+# Korea Investment & Securities (KIS)
+kis:
+  enabled: true
+  account_types:
+    - "real"
+    - "virtual"
+  
+  default_account: "virtual"  # Default account type to use
+  
+  # Market specific settings
+  markets:
+    korean:
+      trading_hours:
+        start: "09:00"
+        end: "15:30"
+        timezone: "Asia/Seoul"
+      
+      tick_sizes:
+        # Price ranges and their corresponding tick sizes
+        - max_price: 2000
+          tick_size: 1
+        - max_price: 5000
+          tick_size: 5
+        - max_price: 20000
+          tick_size: 10
+        - max_price: 50000
+          tick_size: 50
+        - max_price: 200000
+          tick_size: 100
+        - max_price: 500000
+          tick_size: 500
+        - max_price: null  # no upper limit
+          tick_size: 1000
+      
+      order_types:
+        - "limit"
+        - "market"
+        - "conditional"
+      
+      settlement: "T+2"  # Trade date + 2 days
+    
+    us:
+      trading_hours:
+        start: "09:30"
+        end: "16:00"
+        timezone: "America/New_York"
+      
+      exchanges:
+        - "NASDAQ"
+        - "NYSE"
+        - "AMEX"
+      
+      order_types:
+        - "limit"
+        - "market"
+        - "stop"
+        - "stop_limit"
+      
+      settlement: "T+2"
+  
+  # Risk Management
+  risk_management:
+    max_position_size: 1000000  # Maximum position size in KRW
+    max_daily_loss: 100000     # Maximum daily loss in KRW
+    max_orders_per_minute: 10
+    max_concentration: 20      # Maximum % of portfolio in single stock
+    
+    # Order validation
+    min_order_amount: 10000    # Minimum order amount in KRW
+    max_order_amount: 10000000 # Maximum order amount in KRW
+    
+    # Stop loss settings
+    default_stop_loss: 0.05    # 5% stop loss
+    max_stop_loss: 0.20        # 20% maximum stop loss
+
+# LS Securities
+ls_securities:
+  enabled: false  # Enable if using LS Securities
+  account_types:
+    - "real"
+    - "virtual"
+  
+  default_account: "virtual"
+  
+  # Similar structure to KIS can be added here
+  markets:
+    korean:
+      trading_hours:
+        start: "09:00"
+        end: "15:30"
+        timezone: "Asia/Seoul"
+
+# Trading Session Management
+session_management:
+  # Pre-market preparation
+  pre_market:
+    start_time: "08:30"
+    tasks:
+      - "authenticate_apis"
+      - "check_market_holidays"
+      - "validate_trading_permissions"
+      - "load_watchlists"
+  
+  # Market open procedures
+  market_open:
+    tasks:
+      - "enable_live_trading"
+      - "start_price_monitoring"
+      - "activate_strategies"
+  
+  # Market close procedures
+  market_close:
+    tasks:
+      - "close_open_orders"
+      - "calculate_daily_pnl"
+      - "backup_trading_data"
+      - "send_daily_report"
+  
+  # Post-market analysis
+  post_market:
+    start_time: "16:00"
+    tasks:
+      - "analyze_trading_performance"
+      - "update_portfolio_positions"
+      - "prepare_next_day_watchlist"
+
+# Order Management
+order_management:
+  # Order routing priority
+  routing_priority:
+    korean_stocks: ["kis", "ls_securities"]
+    us_stocks: ["kis"]
+  
+  # Default order parameters
+  defaults:
+    order_type: "limit"
+    time_in_force: "day"
+    price_buffer: 0.001  # 0.1% buffer for limit orders
+  
+  # Order tracking
+  tracking:
+    check_interval: 30  # seconds
+    max_pending_time: 3600  # 1 hour
+    auto_cancel_unfilled: true
+  
+  # Split order configuration
+  split_orders:
+    enabled: true
+    max_chunk_size: 1000  # Maximum shares per chunk
+    chunk_delay: 60       # Delay between chunks in seconds
+
+# Portfolio Management
+portfolio:
+  # Position sizing
+  position_sizing:
+    method: "fixed_amount"  # fixed_amount, percent_portfolio, volatility_based
+    default_amount: 1000000  # Default position size in KRW
+    max_positions: 20        # Maximum number of positions
+  
+  # Rebalancing
+  rebalancing:
+    frequency: "weekly"  # daily, weekly, monthly
+    threshold: 0.05      # 5% deviation threshold
+    method: "proportional"
+  
+  # Performance tracking
+  performance:
+    benchmark: "KOSPI"
+    metrics:
+      - "total_return"
+      - "sharpe_ratio"
+      - "max_drawdown"
+      - "win_rate"
+      - "profit_factor"
+
+# Compliance and Audit
+compliance:
+  # Trade reporting
+  reporting:
+    enabled: true
+    real_time: true
+    formats: ["json", "csv"]
+    storage_path: "./logs/trades/"
+  
+  # Audit trail
+  audit:
+    log_all_requests: true
+    log_responses: true
+    retention_days: 90
+  
+  # Regulatory checks
+  regulatory:
+    check_wash_sales: true
+    check_insider_trading: false  # Enable if needed
+    check_position_limits: true
+
+# Error Handling
+error_handling:
+  # Retry configuration
+  retry:
+    max_attempts: 3
+    backoff_factor: 2
+    max_delay: 60
+  
+  # Error categorization
+  error_categories:
+    network_errors:
+      retry: true
+      notify: false
+    
+    authentication_errors:
+      retry: true
+      notify: true
+    
+    business_errors:
+      retry: false
+      notify: true
+    
+    rate_limit_errors:
+      retry: true
+      notify: false
+      delay: 60
+  
+  # Fallback procedures
+  fallback:
+    use_backup_broker: true
+    emergency_liquidation: false
+    notify_administrators: true

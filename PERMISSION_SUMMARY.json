@@ -1,0 +1,41 @@
+{
+  "permission_setup_date": "2025-09-12T07:59:18.664425",
+  "helper_agent_files": [
+    "Project\\Helper\\broker_api_connector.py",
+    "Project\\Helper\\data_provider_api.py",
+    "Project\\Helper\\kis_api_helper_us.py",
+    "Project\\Helper\\kis_common.py",
+    "Project\\Helper\\telegram_messenger.py",
+    "Project\\Helper\\yfinance_helper.py",
+    "Project\\Helper\\__init__.py",
+    "Test\\helper_validation.py",
+    "Test\\simple_helper_test.py",
+    "Test\\test_helper_modules.py",
+    "Test\\FINAL_PRECISION_VALIDATION_REPORT.md",
+    "Test\\focused_precision.log",
+    "Test\\focused_precision_report.txt",
+    "Test\\focused_precision_results.json",
+    "Test\\focused_precision_test.py",
+    "Test\\precision_comparison_report.txt",
+    "Test\\precision_comparison_results.json",
+    "Test\\precision_comparison_test.py",
+    "Test\\precision_test.log",
+    "Test\\comprehensive_function_comparison.json",
+    "Test\\comprehensive_function_comparison.py",
+    "Test\\function_comparison.log",
+    "Test\\FUNCTION_COMPARISON_REPORT.txt",
+    "Test\\precision_comparison_report.txt",
+    "Test\\precision_comparison_results.json",
+    "Test\\precision_comparison_test.py",
+    "Test\\focused_precision.log",
+    "Test\\focused_precision_report.txt",
+    "Test\\focused_precision_results.json",
+    "Test\\focused_precision_test.py"
+  ],
+  "read_only_access_files": [],
+  "protected_files": [
+    "myStockInfo.yaml",
+    "HELPER_FUNCTIONS_MANUAL.md",
+    "AGENT_PERMISSIONS.yaml"
+  ]
+}

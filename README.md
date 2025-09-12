@@ -41,12 +41,14 @@ Helper → Data → Strategy → Service
   - Market scanning and filtering
   - Data normalization and processing
 
-**Managed Files**:
+**Managed Files** (Full R/W Access):
 - `Project/indicator/technical_indicators.py`
 - `Project/indicator/fundamental_indicators.py`
 - `Project/indicator/market_scanner.py`
 - `Project/service/data_gathering_service.py`
 - `Project/service/data_processor.py`
+
+**Helper Functions Access**: 👀 **READ-ONLY** - Can call Helper functions but cannot modify
 
 ### 2. Strategy Agent (Strategy Layer)
 **Role**: Trading Strategy Development & Signal Generation
@@ -58,11 +60,13 @@ Helper → Data → Strategy → Service
   - Risk management rules
   - Portfolio optimization
 
-**Managed Files**:
+**Managed Files** (Full R/W Access):
 - `Project/strategy/signal_generator.py`
 - `Project/strategy/position_sizing.py`
 - `Project/strategy/risk_management.py`
 - `Project/strategy/portfolio_optimizer.py`
+
+**Helper Functions Access**: 👀 **READ-ONLY** - Can call Helper functions but cannot modify
 
 ### 3. Service Agent (Service Layer)
 **Role**: Backtesting, Trading Execution & Database Management
@@ -74,28 +78,67 @@ Helper → Data → Strategy → Service
   - Database operations and backup
   - Risk control systems
 
-**Managed Files**:
+**Managed Files** (Full R/W Access):
 - `Project/service/backtester.py`
 - `Project/service/trade_executor.py`
 - `Project/service/position_manager.py`
 - `Project/database/market_db.py`
 - `Project/database/trade_db.py`
 
-### 4. Helper Agent (Service Layer)
-**Role**: External API Management & Broker Connections
+**Helper Functions Access**: 👀 **READ-ONLY** - Can call Helper functions but cannot modify
+
+### 4. Helper Agent (Service Layer) 🔒
+**Role**: External API Management & Broker Connections (**EXCLUSIVE CONTROL**)
 - **Model**: Claude-3-5-Sonnet-20241022
 - **Priority**: 2 (High)
+- **Access Control**: **EXCLUSIVE** - Only Helper Agent can modify Helper files
 - **Capabilities**:
-  - Broker API integration
+  - Broker API integration (KIS, YFinance, Alpha Vantage)
   - External data provider APIs
-  - API rate limiting and health monitoring
-  - Webhook management
+  - Telegram notification system
+  - API credential management
+  - Function testing and validation
 
-**Managed Files**:
-- `Project/service/broker_api_connector.py`
-- `Project/service/data_provider_api.py`
-- `Project/service/api_rate_limiter.py`
-- `Project/service/webhook_handler.py`
+**Exclusively Managed Files** (Full R/W Access):
+- `Project/Helper/broker_api_connector.py` 🔒
+- `Project/Helper/kis_api_helper_us.py` 🔒
+- `Project/Helper/kis_common.py` 🔒
+- `Project/Helper/yfinance_helper.py` 🔒
+- `Project/Helper/data_provider_api.py` 🔒
+- `Project/Helper/telegram_messenger.py` 🔒
+- `HELPER_FUNCTIONS_MANUAL.md` 🔒
+- `myStockInfo.yaml` 🔒 (API Credentials)
+- `Test/**/*helper*`, `Test/**/*precision*`, `Test/**/*comparison*` 🔒
+
+**Other Agents**: **READ-ONLY** access to Helper functions through defined interfaces
+
+## 🛡️ Access Control & Permissions
+
+### Helper Agent Exclusive Control 🔒
+The **Helper Agent** has **EXCLUSIVE** control over all Helper layer files and API integrations:
+
+- ✅ **ONLY Helper Agent** can modify Helper files
+- ✅ **ONLY Helper Agent** can manage API credentials (`myStockInfo.yaml`)
+- ✅ **ONLY Helper Agent** can update Helper tests and documentation
+- 👀 **Other Agents** have **READ-ONLY** access through defined interfaces
+
+### Permission Matrix
+| Resource | Helper Agent | Other Agents |
+|----------|--------------|--------------|
+| Helper Files (`Project/Helper/**/*.py`) | 🟢 Full R/W | 👀 Read-Only |
+| API Credentials (`myStockInfo.yaml`) | 🟢 Full R/W | 👀 Function Access Only |
+| Helper Documentation | 🟢 Full R/W | 👀 Read-Only |
+| Helper Tests | 🟢 Full R/W | 🚫 No Access |
+
+### Security Rules
+- 🔒 API keys only accessible through Helper functions
+- 🔒 No direct modification of Helper code by other agents
+- 🔒 All Helper changes must go through Helper Agent
+- 🔒 Cross-agent integration through defined interfaces only
+
+**For detailed access control information, see:**
+- [`AGENT_PERMISSIONS.yaml`](AGENT_PERMISSIONS.yaml)
+- [`Project/Helper/HELPER_AGENT_ACCESS_CONTROL.md`](Project/Helper/HELPER_AGENT_ACCESS_CONTROL.md)
 
 ## 🔧 Core Components
 
@@ -227,11 +270,12 @@ AIAssistant/
 │   ├── claude_client.py
 │   ├── multi_agent_system.py
 │   └── api_manager.py
-└── Project/                  # Implementation files (to be created)
-    ├── indicator/
-    ├── strategy/
-    ├── service/
-    └── database/
+└── Project/                  # Implementation files
+    ├── Helper/               # Helper Agent services
+    ├── indicator/            # Data Agent indicators
+    ├── strategy/             # Strategy Agent strategies
+    ├── service/              # Service Agent services
+    └── database/             # Service Agent database
 ```
 
 ## 🔍 System Monitoring

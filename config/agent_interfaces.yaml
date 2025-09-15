@@ -3,7 +3,7 @@
 
 data_agent:
   layer: "Indicator Layer"
-  description: "Data gathering service and technical indicator management"
+  description: "Data gathering service and technical indicator management. Database read-only access for indicator calculations."
   managed_files:
     - "Project/indicator/technical_indicators.py"
     - "Project/indicator/fundamental_indicators.py"
@@ -14,21 +14,30 @@ data_agent:
     - "Project/service/data_validator.py"
     - "config/data_sources.yaml"
   
+  database_access: "read_only"
+  database_restrictions:
+    - "Cannot write to MongoDB collections"
+    - "Can only read market data for indicator calculations"
+    - "Uses Database Layer through MongoDBOperations for data access"
+  
   collaborates_with:
     - agent: strategy_agent
       purpose: "Provide processed market data and indicators"
       interface: "data_feed"
       required_data: ["price_data", "volume_data", "technical_indicators", "fundamental_data"]
+      access_type: "read_only"
     
     - agent: service_agent
       purpose: "Supply data for backtesting and trading services"
       interface: "service_data"
       required_data: ["historical_data", "real_time_feeds", "market_scans"]
+      access_type: "read_only"
     
     - agent: helper_agent
       purpose: "Receive raw data from external APIs"
       interface: "raw_data_input"
       required_data: ["stock_prices", "market_data", "alternative_data"]
+      access_type: "read_only"
 
 strategy_agent:
   layer: "Strategy Layer"

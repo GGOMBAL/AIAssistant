@@ -10,49 +10,59 @@ agents:
     name: "Data Agent"
     model: "Claude-3-Opus-20240229"
     priority: 1
-    layer: "Indicator"
+    layer: "Database"
     
-    # Full Read/Write Access
+    # Full Read/Write Access - EXCLUSIVE CONTROL
     managed_files:
-      - "Project/indicator/**/*.py"
-      - "Project/service/data_gathering_service.py" 
-      - "Project/service/data_processor.py"
-      - "Data/**/*"
+      - "Project/database/**/*.py"           # All Database Python files (EXCLUSIVE)
+      - "Project/database/**/*.yaml"         # Database configuration files
+      - "Project/database/**/*.json"         # Database data files
+      - "DATABASE_ARCHITECTURE.md"           # Database documentation
+      - "Test/**/*database*"                # Database-related tests
+      - "Test/**/*mongodb*"                 # MongoDB tests
+      - "Test/**/*db*"                      # Database tests
+      - "Database/**/*"                     # Database data files
+      - "Backtest/**/*"                     # Backtest data files
       
     # Read-Only Access
     read_only_access:
       - "Project/Helper/**/*.py"      # Helper functions (read-only)
-      - "Project/strategy/**/*.py"     # Strategy files (read-only)
-      - "Project/service/**/*.py"      # Other service files (read-only)
-      - "myStockInfo.yaml"            # Configuration (read-only)
-      - "HELPER_FUNCTIONS_MANUAL.md"  # Helper documentation (read-only)
+      - "Project/indicator/**/*.py"   # Indicator files (read-only)
+      - "Project/strategy/**/*.py"    # Strategy files (read-only)
+      - "Project/service/**/*.py"     # Service files (read-only)
+      - "myStockInfo.yaml"           # Configuration (read-only)
+      - "HELPER_FUNCTIONS_MANUAL.md" # Helper documentation (read-only)
       
     # No Access
-    restricted_access:
-      - "Project/database/**/*.py"    # Database layer restricted
+    restricted_access: []
       
   strategy_agent:
     name: "Strategy Agent"
     model: "Claude-3-Opus-20240229"
     priority: 1
-    layer: "Strategy"
+    layer: "Strategy & Indicator"
     
-    # Full Read/Write Access
+    # Full Read/Write Access - EXCLUSIVE CONTROL
     managed_files:
-      - "Project/strategy/**/*.py"
+      - "Project/strategy/**/*.py"           # All Strategy Python files (EXCLUSIVE)
+      - "Project/indicator/**/*.py"          # All Indicator Python files (EXCLUSIVE)
+      - "INDICATOR_ARCHITECTURE.md"          # Indicator documentation
+      - "Test/**/*indicator*"               # Indicator-related tests
+      - "Test/**/*strategy*"                # Strategy-related tests
+      - "Test/**/*technical*"               # Technical indicator tests
       
     # Read-Only Access  
     read_only_access:
       - "Project/Helper/**/*.py"      # Helper functions (read-only)
-      - "Project/indicator/**/*.py"   # Indicator files (read-only)
+      - "Project/database/**/*.py"    # Database files (read-only)
       - "Project/service/**/*.py"     # Service files (read-only)
       - "myStockInfo.yaml"           # Configuration (read-only)
       - "HELPER_FUNCTIONS_MANUAL.md" # Helper documentation (read-only)
+      - "DATABASE_ARCHITECTURE.md"   # Database documentation (read-only)
       - "Data/**/*"                  # Data files (read-only)
       
     # No Access
-    restricted_access:
-      - "Project/database/**/*.py"   # Database layer restricted
+    restricted_access: []
       
   service_agent:
     name: "Service Agent"
@@ -60,21 +70,25 @@ agents:
     priority: 2
     layer: "Service"
     
-    # Full Read/Write Access
+    # Full Read/Write Access - EXCLUSIVE CONTROL
     managed_files:
-      - "Project/service/**/*.py"
-      - "Project/database/**/*.py"
-      - "Database/**/*"
-      - "Backtest/**/*"
+      - "Project/service/**/*.py"            # All Service Python files (EXCLUSIVE)
+      - "SERVICE_ARCHITECTURE.md"            # Service documentation
+      - "Test/**/*service*"                 # Service-related tests
       
     # Read-Only Access
     read_only_access:
       - "Project/Helper/**/*.py"      # Helper functions (read-only)
       - "Project/indicator/**/*.py"   # Indicator files (read-only)
       - "Project/strategy/**/*.py"    # Strategy files (read-only)
+      - "Project/database/**/*.py"    # Database files (read-only)
       - "myStockInfo.yaml"           # Configuration (read-only)
       - "HELPER_FUNCTIONS_MANUAL.md" # Helper documentation (read-only)
+      - "DATABASE_ARCHITECTURE.md"   # Database documentation (read-only)
+      - "INDICATOR_ARCHITECTURE.md"  # Indicator documentation (read-only)
       - "Data/**/*"                  # Data files (read-only)
+      - "Database/**/*"              # Database data (read-only)
+      - "Backtest/**/*"              # Backtest data (read-only)
       
     # No Access
     restricted_access: []
@@ -118,6 +132,16 @@ cross_agent_access:
     read_access: ["data_agent", "strategy_agent", "service_agent"]
     write_access: ["helper_agent"]
     
+  database_functions:
+    description: "Database functions can be called by other agents but only modified by data_agent"
+    read_access: ["strategy_agent", "service_agent", "helper_agent"]
+    write_access: ["data_agent"]
+    
+  indicator_functions:
+    description: "Indicator functions can be called by other agents but only modified by strategy_agent"
+    read_access: ["data_agent", "service_agent", "helper_agent"]
+    write_access: ["strategy_agent"]
+    
   configuration_files:
     description: "Configuration files managed exclusively by helper_agent"
     read_access: ["data_agent", "strategy_agent", "service_agent"] 
@@ -130,6 +154,26 @@ cross_agent_access:
 
 # File Operation Permissions
 file_operations:
+  data_agent:
+    allowed_operations:
+      - "create"     # Can create new database files
+      - "read"       # Can read all database files
+      - "update"     # Can modify database files
+      - "delete"     # Can remove database files
+      - "execute"    # Can run database scripts
+      - "test"       # Can run database tests
+      - "backup"     # Can backup database data
+      - "restore"    # Can restore database data
+      
+  strategy_agent:
+    allowed_operations:
+      - "create"     # Can create new indicator/strategy files
+      - "read"       # Can read all indicator/strategy files
+      - "update"     # Can modify indicator/strategy files
+      - "delete"     # Can remove indicator/strategy files
+      - "execute"    # Can run indicator/strategy scripts
+      - "test"       # Can run indicator/strategy tests
+      
   helper_agent:
     allowed_operations:
       - "create"     # Can create new helper files
@@ -139,18 +183,45 @@ file_operations:
       - "execute"    # Can run helper scripts
       - "test"       # Can run helper tests
       
-  other_agents:
+  service_agent:
+    allowed_operations:
+      - "create"     # Can create new service files
+      - "read"       # Can read all service files
+      - "update"     # Can modify service files
+      - "delete"     # Can remove service files
+      - "execute"    # Can run service scripts
+      - "test"       # Can run service tests
+      
+  cross_agent_access:
+    database_files_operations:
+      - "read"       # Other agents can read database files
+      - "execute"    # Other agents can call database functions
+      
+    indicator_files_operations:
+      - "read"       # Other agents can read indicator files
+      - "execute"    # Other agents can call indicator functions
+      
     helper_files_operations:
-      - "read"       # Read-only access to helper files
-      - "execute"    # Can call helper functions
+      - "read"       # Other agents can read helper files
+      - "execute"    # Other agents can call helper functions
+      
+    service_files_operations:
+      - "read"       # Other agents can read service files
+      - "execute"    # Other agents can call service functions
       
     restricted_operations:
-      - "update"     # Cannot modify helper files
-      - "delete"     # Cannot delete helper files
-      - "create"     # Cannot create helper files
+      - "update"     # Cannot modify files outside their layer
+      - "delete"     # Cannot delete files outside their layer
+      - "create"     # Cannot create files outside their layer
 
 # Security Rules  
 security_rules:
+  database_operations:
+    - "Only data_agent can modify database function implementations"
+    - "Other agents must use database functions through defined interfaces"
+    - "No direct MongoDB connections by other agents"
+    - "All database credentials must be managed through configuration files"
+    
   api_credentials:
     - "Only helper_agent can modify myStockInfo.yaml"
     - "Other agents must use helper functions to access APIs"
@@ -161,10 +232,17 @@ security_rules:
     - "Other agents can only call helper functions through defined interfaces"
     - "No direct imports of helper internals by other agents"
     
+  indicator_functions:
+    - "Only strategy_agent can modify indicator function implementations"
+    - "Other agents can only call indicator functions through defined interfaces"
+    - "No direct modification of technical indicators by other agents"
+    
   testing:
-    - "Only helper_agent can modify helper test files"
-    - "Other agents can read test results but not modify test code"
-    - "Helper_agent maintains test coverage and validation"
+    - "Only respective agents can modify their test files"
+    - "Data_agent maintains database test coverage and validation"
+    - "Strategy_agent maintains indicator test coverage and validation"
+    - "Helper_agent maintains helper test coverage and validation"
+    - "Service_agent maintains service test coverage and validation"
 
 # Integration Guidelines
 integration:

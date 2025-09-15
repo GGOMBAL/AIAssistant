@@ -2,6 +2,7 @@
 Data Frame Generator - Strategy Agent Management
 Based on refer/BackTest/TestMain.py
 Generates df_W, df_RS, df_D, df_E, df_F data frames for indicator processing
+Now integrated with Database Layer
 """
 
 import pandas as pd
@@ -10,6 +11,21 @@ import concurrent.futures
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional, Any
 import logging
+import sys
+import os
+
+# Add project root to path for database imports
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(project_root)
+
+# Import Database Layer components
+try:
+    from Project.database.mongodb_operations import MongoDBOperations
+    from Project.database.database_name_calculator import calculate_database_name
+    DATABASE_AVAILABLE = True
+except ImportError:
+    DATABASE_AVAILABLE = False
+    logger.warning("Database Layer not available - using simulation mode")
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -54,7 +70,8 @@ class DataFrameGenerator:
                           universe: List[str], data_start_day: datetime, 
                           end_day: datetime) -> Tuple[str, Dict, List[str]]:
         """
-        Single database read task (simulated - based on refer implementation)
+        Single database read task - integrated with Database Layer
+        Based on refer/BackTest/TestMain.py read_database_task
         
         Args:
             market: Market identifier
@@ -68,21 +85,23 @@ class DataFrameGenerator:
             Tuple of (data_type, dataframe_dict, updated_universe)
         """
         try:
-            # This would normally connect to MongoDB
-            # For now, we'll simulate the data structure based on Helper functions
-            logger.info(f"Reading {data_type} data for {area} market")
-            
-            # Use Helper functions to get real market data
-            if data_type in ["W", "AD"]:  # Weekly and Daily data
-                df_dict = self._get_market_data_from_helper(universe, data_type)
-                updated_universe = list(df_dict.keys())
+            if DATABASE_AVAILABLE:
+                # Use Database Layer (same as refer implementation)
+                logger.info(f"Reading {data_type} data from MongoDB for {area} market")
+                
+                db = MongoDBOperations(DB_address="MONGODB_LOCAL")
+                database_name = calculate_database_name(market, area, data_type, "Stock")
+                
+                # Call ReadDataBase method (equivalent to refer implementation)
+                df_dict, updated_universe = self._read_from_mongodb(
+                    db, universe, market, area, database_name, data_start_day, end_day
+                )
+                
                 return data_type, df_dict, updated_universe
             else:
-                # For RS, E, F data types, create placeholder structure
-                df_dict = {symbol: self._create_placeholder_dataframe(data_start_day, end_day) 
-                          for symbol in universe}
-                updated_universe = universe
-                return data_type, df_dict, updated_universe
+                # Fallback to simulation mode
+                logger.warning(f"Database not available, simulating {data_type} data")
+                return self._simulate_database_read(data_type, universe, data_start_day, end_day)
                 
         except Exception as e:
             logger.error(f"Error reading {data_type} data: {e}")
@@ -90,6 +109,83 @@ class DataFrameGenerator:
             df_dict = {symbol: pd.DataFrame() for symbol in universe}
             return data_type, df_dict, universe
     
+    def _read_from_mongodb(self, db: MongoDBOperations, universe: List[str], 
+                          market: str, area: str, database_name: str, 
+                          data_start_day: datetime, end_day: datetime) -> Tuple[Dict, List[str]]:
+        """
+        Read data from MongoDB - equivalent to MongoDB.ReadDataBase method
+        
+        Args:
+            db: MongoDB operations instance
+            universe: List of stock symbols
+            market: Market identifier
+            area: Area identifier  
+            database_name: Database name to query
+            data_start_day: Start date
+            end_day: End date
+            
+        Returns:
+            Tuple of (dataframe_dict, updated_universe)
+        """
+        df_dict = {}
+        updated_universe = []
+        
+        try:
+            for symbol in universe:
+                try:
+                    # Query data for each symbol
+                    df = db.execute_query(
+                        db_name=database_name,
+                        collection_name=symbol,
+                        query={
+                            'Date': {
+                                '$gte': data_start_day,
+                                '$lte': end_day
+                            }
+                        }
+                    )
+                    
+                    if not df.empty:
+                        df_dict[symbol] = df
+                        updated_universe.append(symbol)
+                        
+                except Exception as e:
+                    logger.warning(f"Error reading {symbol} from {database_name}: {e}")
+                    continue
+                    
+            logger.info(f"Successfully read data for {len(updated_universe)} symbols from {database_name}")
+            return df_dict, updated_universe
+            
+        except Exception as e:
+            logger.error(f"Error reading from MongoDB database {database_name}: {e}")
+            return {}, []
+    
+    def _simulate_database_read(self, data_type: str, universe: List[str], 
+                               data_start_day: datetime, end_day: datetime) -> Tuple[str, Dict, List[str]]:
+        """
+        Simulate database read when Database Layer is not available
+        
+        Args:
+            data_type: Type of data to simulate
+            universe: List of symbols
+            data_start_day: Start date
+            end_day: End date
+            
+        Returns:
+            Tuple of (data_type, dataframe_dict, updated_universe)
+        """
+        try:
+            df_dict = {}
+            for symbol in universe:
+                df = self._create_placeholder_dataframe(data_start_day, end_day)
+                df_dict[symbol] = df
+            
+            return data_type, df_dict, universe
+            
+        except Exception as e:
+            logger.error(f"Error in simulation mode: {e}")
+            return data_type, {}, []
+
     def _get_market_data_from_helper(self, universe: List[str], data_type: str) -> Dict[str, pd.DataFrame]:
         """
         Get real market data using Helper functions

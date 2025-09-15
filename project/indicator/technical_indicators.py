@@ -2,6 +2,7 @@
 Technical Indicators Generator - Strategy Agent Management
 Based on refer/Indicator/GenTradingData.py and refer/Helper/KIS/KIS_Make_TradingData.py
 Generates technical indicators for trading dataframes
+Now integrated with Database Layer for full compatibility
 """
 
 import pandas as pd
@@ -10,6 +11,20 @@ import logging
 from typing import Dict, List, Tuple, Optional, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import multiprocessing
+import sys
+import os
+
+# Add project root to path
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(project_root)
+
+# Import helper functions for technical analysis (optional integration)
+try:
+    # These would come from refer/Helper/KIS/KIS_Make_TradingData.py equivalent
+    from refer.Helper.KIS.KIS_Make_TradingData import GetTrdData2
+    REFER_HELPER_AVAILABLE = True
+except ImportError:
+    REFER_HELPER_AVAILABLE = False
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -130,7 +145,8 @@ class TechnicalIndicatorGenerator:
     
     def _process_single_stock_technical_data(self, args: Tuple) -> Tuple[str, Optional[pd.DataFrame]]:
         """
-        Process technical data for a single stock (based on refer implementation)
+        Process technical data for a single stock - matches refer/Indicator/GenTradingData.py
+        _process_single_stock_technical_data function exactly
         
         Args:
             args: Tuple of (stock, p_code, area, dataframe_stock, trading_config)
@@ -141,7 +157,15 @@ class TechnicalIndicatorGenerator:
         stock, p_code, area, dataframe_stock, trading = args
         
         try:
-            # Process based on period code
+            # Use refer implementation if available (exact match)
+            if REFER_HELPER_AVAILABLE:
+                try:
+                    processed_df = GetTrdData2(p_code, area, dataframe_stock.copy(), stock, trading)
+                    return stock, processed_df
+                except Exception as e:
+                    logger.warning(f"Refer implementation failed for {stock}: {e}, falling back to local")
+            
+            # Fallback to local implementation
             processed_df = self._get_trading_data(p_code, area, dataframe_stock.copy(), stock, trading)
             return stock, processed_df
         except Exception as e:

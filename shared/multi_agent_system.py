@@ -153,8 +153,8 @@ class MultiAgentOrchestrator:
     def _initialize_agents(self):
         agent_configs = {
             "data_agent": {
-                "capabilities": ["data_gathering", "indicator_calculation", "data_validation", "data_transformation", "market_scanning"],
-                "role": "Data gathering service and indicator management"
+                "capabilities": ["data_gathering", "indicator_calculation", "data_validation", "data_transformation", "market_scanning", "database_read_only"],
+                "role": "Data gathering service and indicator management. Database read-only access for technical indicators."
             },
             "strategy_agent": {
                 "capabilities": ["signal_generation", "position_sizing", "strategy_optimization", "risk_analysis", "portfolio_optimization"],

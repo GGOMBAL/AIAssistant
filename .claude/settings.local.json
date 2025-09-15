@@ -9,7 +9,10 @@
       "Bash(git push:*)",
       "Bash(mkdir:*)",
       "Bash(python:*)",
-      "Bash(git reset:*)"
+      "Bash(git reset:*)",
+      "Bash(set PYTHONPATH=%CD%)",
+      "Bash(chcp:*)",
+      "Bash(git fetch:*)"
     ],
     "deny": [],
     "ask": []

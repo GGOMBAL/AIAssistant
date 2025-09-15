@@ -142,8 +142,9 @@ file_ownership:
     shared_access:
       - agent: data_agent
         files: ["Project/database/market_db.py"]
-        permissions: ["read", "write"]
-        purpose: "Store and retrieve market data"
+        permissions: ["read"]
+        purpose: "Read market data for indicator calculations (read-only access)"
+        database_constraint: "Indicator Layer has read-only database access"
         
       - agent: strategy_agent
         files: ["Project/database/strategy_db.py", "Project/database/market_db.py"]
@@ -205,6 +206,7 @@ access_control:
     - rule: "Shared access must be explicitly defined in the shared_access section"
     - rule: "Configuration files require special approval for modifications"
     - rule: "All file operations must be logged for audit purposes"
+    - rule: "data_agent has read-only database access - cannot write to MongoDB collections"
   
   emergency_access:
     - agent: orchestrator

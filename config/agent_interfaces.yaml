@@ -1,147 +1,323 @@
-# Agent Interface Definitions - 4 Core Agents
-# Updated: data_agent, strategy_agent, service_agent, helper_agent
+# Agent Interface Definitions - Multi-Agent Trading System
+# Updated: 2025-09-21 - Based on actual implementation analysis
+# Orchestrator + 4 Specialized Agents
 
-data_agent:
-  layer: "Indicator Layer"
-  description: "Data gathering service and technical indicator management. Database read-only access for indicator calculations."
-  managed_files:
-    - "Project/indicator/technical_indicators.py"
-    - "Project/indicator/fundamental_indicators.py"
-    - "Project/indicator/market_scanner.py"
-    - "Project/service/data_gathering_service.py"
-    - "Project/service/data_processor.py"
-    - "Project/service/data_normalizer.py"
-    - "Project/service/data_validator.py"
-    - "config/data_sources.yaml"
-  
-  database_access: "read_only"
-  database_restrictions:
-    - "Cannot write to MongoDB collections"
-    - "Can only read market data for indicator calculations"
-    - "Uses Database Layer through MongoDBOperations for data access"
-  
-  collaborates_with:
+# ===== ORCHESTRATOR AGENT =====
+orchestrator_agent:
+  layer: "Orchestration Layer"
+  description: "Main workflow coordinator and agent manager"
+  model: "claude-3-opus-20240229"
+
+  responsibilities:
+    - "Agent task allocation and coordination"
+    - "Prompt generation and response collection"
+    - "Quality evaluation and correction"
+    - "System state monitoring"
+    - "Error handling and recovery"
+
+  coordinates_with:
+    - agent: data_agent
+      purpose: "Data processing task allocation"
+      interface: "orchestration_commands"
+
     - agent: strategy_agent
-      purpose: "Provide processed market data and indicators"
-      interface: "data_feed"
-      required_data: ["price_data", "volume_data", "technical_indicators", "fundamental_data"]
-      access_type: "read_only"
-    
-    - agent: service_agent
-      purpose: "Supply data for backtesting and trading services"
-      interface: "service_data"
-      required_data: ["historical_data", "real_time_feeds", "market_scans"]
-      access_type: "read_only"
-    
-    - agent: helper_agent
-      purpose: "Receive raw data from external APIs"
-      interface: "raw_data_input"
-      required_data: ["stock_prices", "market_data", "alternative_data"]
-      access_type: "read_only"
+      purpose: "Strategy analysis task allocation"
+      interface: "orchestration_commands"
 
+    - agent: service_agent
+      purpose: "Execution service task allocation"
+      interface: "orchestration_commands"
+
+    - agent: helper_agent
+      purpose: "External API task allocation"
+      interface: "orchestration_commands"
+
+# ===== DATA AGENT =====
+data_agent:
+  layer: "Data Layer"
+  description: "Data collection, processing, and technical indicator management"
+  model: "gemini-2.5-flash"
+
+  managed_files:
+    # Indicator Layer
+    - "Project/indicator/technical_indicators.py"
+    - "Project/indicator/data_frame_generator.py"
+    - "Project/indicator/__init__.py"
+
+    # Database Layer
+    - "Project/database/database_manager.py"
+    - "Project/database/mongodb_operations.py"
+    - "Project/database/us_market_manager.py"
+    - "Project/database/historical_data_manager.py"
+    - "Project/database/database_name_calculator.py"
+    - "Project/database/__init__.py"
+
+  core_services:
+    technical_indicators:
+      class: "TechnicalIndicatorGenerator"
+      capabilities: ["SMA", "EMA", "RSI", "MACD", "Bollinger", "ADR", "RS", "Breakout_Analysis"]
+
+    data_frame_generator:
+      class: "DataFrameGenerator"
+      capabilities: ["Multi_Source_Integration", "Time_Series_Normalization", "Data_Quality_Validation"]
+
+    database_manager:
+      class: "DatabaseManager"
+      capabilities: ["MongoDB_Operations", "Market_Data_Management", "Account_History_Management"]
+
+  database_access: "read_write_exclusive"
+  database_restrictions:
+    - "Exclusive access to indicator and database collections"
+    - "Responsible for data integrity and validation"
+    - "Manages MongoDB operations for all agents"
+
+  provides_to:
+    - agent: strategy_agent
+      interface: "technical_indicators_feed"
+      data_types: ["daily_indicators", "weekly_indicators", "rs_indicators", "fundamental_data"]
+      schema: "indicators_schema_v1"
+
+    - agent: service_agent
+      interface: "historical_data_feed"
+      data_types: ["market_history", "account_history", "trade_history"]
+      schema: "historical_data_schema_v1"
+
+# ===== STRATEGY AGENT =====
 strategy_agent:
   layer: "Strategy Layer"
-  description: "Trading strategy development and signal generation"
-  managed_files:
-    - "Project/strategy/signal_generator.py"
-    - "Project/strategy/position_sizing.py"
-    - "Project/strategy/risk_management.py"
-    - "Project/strategy/portfolio_optimizer.py"
-    - "Project/strategy/strategy_evaluator.py"
-    - "Project/strategy/strategy_factory.py"
-    - "config/strategy_config.yaml"
-  
-  collaborates_with:
-    - agent: data_agent
-      purpose: "Receive market data and indicators for analysis"
-      interface: "data_feed"
-      required_data: ["processed_data", "indicators", "market_conditions"]
-    
-    - agent: service_agent
-      purpose: "Provide signals for backtesting and trading"
-      interface: "strategy_signals"
-      required_data: ["buy_signals", "sell_signals", "position_sizes", "risk_params"]
+  description: "Trading strategy development, signal generation, and portfolio analysis"
+  model: "gemini-2.5-flash"
 
-service_agent:
-  layer: "Service Layer"  
-  description: "Backtesting, trading execution, and database management services"
   managed_files:
-    - "Project/service/backtester.py"
-    - "Project/service/simulation_engine.py"
-    - "Project/service/trade_executor.py"
-    - "Project/service/position_manager.py"
-    - "Project/service/risk_controller.py"
-    - "Project/database/market_db.py"
-    - "Project/database/strategy_db.py"
-    - "Project/database/trade_db.py"
-    - "Project/database/backup_manager.py"
-    - "config/trading_config.yaml"
-    - "config/database_config.yaml"
-  
-  collaborates_with:
+    # Core Strategy Services (실제 구현됨)
+    - "Project/strategy/signal_generation_service.py"
+    - "Project/strategy/position_sizing_service.py"
+    - "Project/strategy/account_analysis_service.py"
+    - "Project/strategy/__init__.py"
+
+    # Auto-generated Strategy Files
+    - "Project/strategy/trading_strategy_*.py"
+
+  core_services:
+    signal_generation:
+      class: "SignalGenerationService"
+      capabilities:
+        - "Multi_Timeframe_Analysis"
+        - "RS_Signal_Generation"
+        - "Fundamental_Filtering"
+        - "Breakout_Pattern_Recognition"
+        - "Signal_Strength_Calculation"
+
+    position_sizing:
+      class: "PositionSizingService"
+      capabilities:
+        - "ADR_Based_Sizing"
+        - "Dynamic_Loss_Cut"
+        - "Pyramiding_Strategy"
+        - "Win_Loss_Analysis"
+        - "Portfolio_Concentration"
+
+    account_analysis:
+      class: "AccountAnalysisService"
+      capabilities:
+        - "Holdings_Analysis"
+        - "Portfolio_Risk_Assessment"
+        - "Sell_Recommendations"
+        - "Concentration_Risk_HHI"
+        - "Performance_Metrics"
+
+  receives_from:
     - agent: data_agent
-      purpose: "Access historical and real-time data"
-      interface: "service_data"
-      required_data: ["market_history", "live_feeds", "data_quality_metrics"]
-    
-    - agent: strategy_agent
-      purpose: "Execute strategy signals and backtests"
-      interface: "strategy_signals"
-      required_data: ["trading_signals", "strategy_parameters", "risk_rules"]
-    
+      interface: "technical_indicators_feed"
+      required_data: ["processed_indicators", "market_data", "fundamental_data"]
+
     - agent: helper_agent
-      purpose: "Execute trades through broker APIs"
-      interface: "trade_execution"
-      required_data: ["order_routing", "execution_confirmations", "account_status"]
+      interface: "account_status_feed"
+      required_data: ["balance_info", "holdings_data", "trading_status"]
 
-helper_agent:
+  provides_to:
+    - agent: service_agent
+      interface: "trading_signals_feed"
+      data_types: ["buy_signals", "sell_signals", "position_sizes", "risk_parameters"]
+      schema: "trading_signals_schema_v1"
+
+# ===== SERVICE AGENT =====
+service_agent:
   layer: "Service Layer"
-  description: "External API management for brokers and data providers"
+  description: "Backtesting, order execution, and performance analysis"
+  model: "gemini-2.5-flash"
+
   managed_files:
+    # Current Implementation
+    - "Project/service/backtest_service_*.py"  # Auto-generated files
+    - "Project/service/__init__.py"
+
+    # Future Implementation (백테스트 함수들 이관 예정)
+    future_services:
+      - "buy_stock_service.py"      # from Strategy Layer
+      - "sell_stock_service.py"     # from Strategy Layer
+      - "half_sell_service.py"      # from Strategy Layer
+      - "pyramid_buy_service.py"    # from Strategy Layer
+      - "order_execution_service.py"
+      - "risk_management_service.py"
+      - "performance_analyzer.py"
+
+  planned_services:
+    backtest_engine:
+      migrated_functions: ["buy_stock", "sell_stock", "half_sell_stock", "pyramid_buy", "whipsaw_protection"]
+      source: "Project/strategy/position_sizing_service.py"
+
+    order_execution:
+      capabilities: ["Real_Time_Orders", "Order_Tracking", "Fill_Confirmation", "Error_Handling"]
+
+    risk_management:
+      capabilities: ["Real_Time_Risk_Monitor", "Position_Limits", "Loss_Limits", "Emergency_Liquidation"]
+
+    performance_analysis:
+      capabilities: ["Return_Calculation", "Sharpe_Ratio", "Max_Drawdown", "Trade_Statistics"]
+
+  receives_from:
+    - agent: strategy_agent
+      interface: "trading_signals_feed"
+      required_data: ["signals", "position_sizes", "risk_params"]
+
+    - agent: data_agent
+      interface: "historical_data_feed"
+      required_data: ["market_data", "account_history"]
+
+  provides_to:
+    - agent: helper_agent
+      interface: "order_execution_requests"
+      data_types: ["buy_orders", "sell_orders", "order_modifications"]
+      schema: "order_execution_schema_v1"
+
+# ===== HELPER AGENT =====
+helper_agent:
+  layer: "External Integration Layer"
+  description: "External API management, broker connectivity, and notification services"
+  model: "gemini-2.5-flash"
+
+  managed_files:
+    # Current Implementation
     - "Project/Helper/broker_api_connector.py"
+    - "Project/Helper/data_provider_api.py"
     - "Project/Helper/kis_api_helper_us.py"
     - "Project/Helper/kis_common.py"
-    - "Project/Helper/data_provider_api.py"
-    - "Project/Helper/yfinance_helper.py"
     - "Project/Helper/telegram_messenger.py"
-    - "config/api_credentials.yaml"
-    - "config/broker_config.yaml"
-  
-  capabilities:
-    - "broker_api_management"
-    - "external_data_collection"
-    - "api_rate_limiting"
-    - "webhook_handling"
-    - "health_monitoring"
-    - "data_routing"
-  
-  services:
-    broker_apis:
-      - "KIS (Korea Investment & Securities)"
-      - "LS Securities"
-    
+    - "Project/Helper/yfinance_helper.py"
+    - "Project/Helper/HELPER_AGENT_ACCESS_CONTROL.md"
+    - "Project/Helper/__init__.py"
+
+    # Exclusive Configuration
+    - "myStockInfo.yaml"
+
+  core_services:
     data_providers:
-      - "Alpha Vantage"
-      - "Yahoo Finance"
-      - "Economic Data APIs"
-    
-    communication:
-      - "Telegram Bot"
-      - "Webhooks"
-      - "Email Notifications"
-    
-    monitoring:
-      - "API Health Checks"
-      - "Performance Metrics"
-      - "Error Tracking"
-  
-  collaborates_with:
+      alpha_vantage:
+        class: "AlphaVantageAPI"
+        capabilities: ["Premium_Market_Data", "Fundamental_Data", "Earnings_Data"]
+
+      yahoo_finance:
+        class: "YahooFinanceAPI"
+        capabilities: ["Free_Market_Data", "Company_Info", "Financial_Data"]
+
+      data_provider_manager:
+        class: "DataProviderManager"
+        capabilities: ["Multi_Provider_Management", "Fallback_Support", "Rate_Limiting"]
+
+    broker_apis:
+      kis_broker:
+        class: "KISBrokerAPI"
+        capabilities: ["US_Trading", "Account_Management", "Order_Execution"]
+
+      broker_manager:
+        class: "BrokerAPIManager"
+        capabilities: ["Multi_Broker_Support", "Authentication", "Order_Routing"]
+
+    notification_services:
+      telegram:
+        classes: ["TelegramBot", "TelegramNotificationService", "TelegramCommandHandler"]
+        capabilities: ["Trading_Alerts", "System_Notifications", "Command_Processing"]
+
+  provides_to:
     - agent: data_agent
-      purpose: "Supply external market data"
-      interface: "raw_data_input"
-      required_data: ["market_feeds", "news_data", "economic_indicators"]
-    
+      interface: "market_data_feed"
+      data_types: ["ohlcv_data", "fundamental_data", "earnings_data", "exchange_rates"]
+
+    - agent: strategy_agent
+      interface: "account_status_feed"
+      data_types: ["balance_info", "holdings_data", "trading_status"]
+
+  receives_from:
     - agent: service_agent
-      purpose: "Handle trade execution via broker APIs"
-      interface: "trade_execution"
-      required_data: ["order_submissions", "fill_reports", "position_updates"]
+      interface: "order_execution_requests"
+      required_data: ["order_details", "execution_instructions"]
+
+# ===== INTERFACE SCHEMAS =====
+schemas:
+  indicators_schema_v1:
+    required_fields: ["symbol", "timestamp", "indicator_type", "value"]
+    data_types:
+      symbol: "string"
+      timestamp: "datetime"
+      indicator_type: "string"
+      value: "float"
+    validation: true
+
+  trading_signals_schema_v1:
+    required_fields: ["symbol", "signal_type", "signal_strength", "timestamp"]
+    data_types:
+      symbol: "string"
+      signal_type: "enum[BUY,SELL,HOLD]"
+      signal_strength: "float[0,1]"
+      timestamp: "datetime"
+    validation: true
+
+  order_execution_schema_v1:
+    required_fields: ["order_id", "symbol", "side", "quantity", "price"]
+    data_types:
+      order_id: "string"
+      symbol: "string"
+      side: "enum[BUY,SELL]"
+      quantity: "integer"
+      price: "float"
+    validation: true
+
+# ===== CROSS-AGENT DEPENDENCIES =====
+dependencies:
+  strategy_agent:
+    depends_on:
+      - agent: data_agent
+        services: ["TechnicalIndicatorGenerator", "DataFrameGenerator"]
+        reason: "Requires processed market data and indicators"
+
+      - agent: helper_agent
+        services: ["BrokerAPIManager"]
+        reason: "Needs account status for position analysis"
+
+  service_agent:
+    depends_on:
+      - agent: strategy_agent
+        services: ["SignalGenerationService", "PositionSizingService"]
+        reason: "Requires trading signals and position parameters"
+
+      - agent: helper_agent
+        services: ["BrokerAPIConnector"]
+        reason: "Needs broker connectivity for order execution"
+
+  data_agent:
+    depends_on:
+      - agent: helper_agent
+        services: ["DataProviderAPI"]
+        reason: "Requires external market data feeds"
+
+# ===== AGENT INTERACTION MATRIX =====
+interaction_matrix:
+  orchestrator_agent: ["*", "*", "*", "*", "*"]  # Can interact with all
+  data_agent: ["R", "-", "P", "R", "R"]         # Receives from Helper, Provides to Strategy/Service
+  strategy_agent: ["R", "R", "-", "P", "R"]     # Receives from Data/Helper, Provides to Service
+  service_agent: ["R", "R", "R", "-", "P"]      # Receives from Data/Strategy, Provides to Helper
+  helper_agent: ["R", "P", "R", "R", "-"]       # Provides to Data/Strategy, Receives from Service
+
+# Legend:
+# R = Receives data from, P = Provides data to, * = Full coordination access, - = No direct interaction

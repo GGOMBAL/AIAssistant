@@ -70,20 +70,8 @@ kis:
       
       settlement: "T+2"
   
-  # Risk Management
-  risk_management:
-    max_position_size: 1000000  # Maximum position size in KRW
-    max_daily_loss: 100000     # Maximum daily loss in KRW
-    max_orders_per_minute: 10
-    max_concentration: 20      # Maximum % of portfolio in single stock
-    
-    # Order validation
-    min_order_amount: 10000    # Minimum order amount in KRW
-    max_order_amount: 10000000 # Maximum order amount in KRW
-    
-    # Stop loss settings
-    default_stop_loss: 0.05    # 5% stop loss
-    max_stop_loss: 0.20        # 20% maximum stop loss
+  # Risk Management - 리스크 관리 설정은 risk_management.yaml 참조
+  # Note: Risk management settings have been moved to risk_management.yaml for better organization
 
 # LS Securities
 ls_securities:

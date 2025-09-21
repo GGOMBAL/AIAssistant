@@ -1,0 +1,226 @@
+# Risk Management Configuration
+# 계좌의 리스크 매니지먼트 정보 정의
+# 작성일: 2025-09-15
+# 관리: Service Agent, Strategy Agent 공통 사용
+
+version: "1.0"
+last_updated: "2025-09-15"
+
+# 전체 시스템 리스크 제한
+system_risk_limits:
+  # 포지션 크기 제한
+  max_position_size: 1000000  # KRW 기준 최대 포지션 크기
+  max_daily_loss: 100000      # KRW 기준 일일 최대 손실 한도
+  max_concentration: 20       # 단일 종목 포트폴리오 최대 비중 (%)
+  max_positions: 20           # 최대 동시 보유 포지션 수
+
+  # 거래 빈도 제한
+  max_orders_per_minute: 10   # 분당 최대 주문 수
+  max_orders_per_hour: 200    # 시간당 최대 주문 수
+  max_orders_per_day: 1000    # 일일 최대 주문 수
+
+  # 계좌별 제한
+  account_limits:
+    virtual:
+      max_position_size: 500000
+      max_daily_loss: 50000
+      max_positions: 10
+    real:
+      max_position_size: 1000000
+      max_daily_loss: 100000
+      max_positions: 20
+
+# 주문 검증 규칙
+order_validation:
+  # 금액 제한
+  min_order_amount: 10000     # KRW 기준 최소 주문 금액
+  max_order_amount: 10000000  # KRW 기준 최대 주문 금액
+
+  # 가격 검증
+  max_price_deviation: 0.05   # 현재가 대비 최대 허용 편차 (5%)
+
+  # 수량 검증
+  min_shares: 1               # 최소 주문 수량
+  max_shares: 10000           # 최대 주문 수량
+
+  # 시간 제한
+  order_timeout: 300          # 주문 타임아웃 (초)
+  cool_down_period: 30        # 동일 종목 재주문 대기시간 (초)
+
+# 손절매 (Stop Loss) 설정
+stop_loss:
+  # 기본 손절매 설정
+  default_stop_loss: 0.05     # 5% 기본 손절매
+  max_stop_loss: 0.20         # 20% 최대 손절매
+  min_stop_loss: 0.01         # 1% 최소 손절매
+
+  # 동적 손절매
+  trailing_stop:
+    enabled: true
+    trail_amount: 0.02        # 2% 트레일링 폭
+    trigger_threshold: 0.05   # 5% 이익 시 트레일링 시작
+
+  # 시간 기반 손절매
+  time_based:
+    enabled: false
+    max_holding_days: 30      # 최대 보유 기간 (일)
+    auto_liquidate: false     # 기간 초과 시 자동 청산
+
+# 익절 (Take Profit) 설정
+take_profit:
+  # 기본 익절 설정
+  default_take_profit: 0.10   # 10% 기본 익절
+  max_take_profit: 0.50       # 50% 최대 익절
+
+  # 부분 익절
+  partial_profit:
+    enabled: true
+    first_target: 0.05        # 5% 첫 번째 목표
+    first_sell_ratio: 0.30    # 30% 부분 매도
+    second_target: 0.10       # 10% 두 번째 목표
+    second_sell_ratio: 0.50   # 50% 부분 매도
+
+# 포트폴리오 리스크 관리
+portfolio_risk:
+  # 섹터 분산
+  sector_limits:
+    technology: 0.30          # 기술주 최대 30%
+    finance: 0.20             # 금융주 최대 20%
+    healthcare: 0.15          # 의료주 최대 15%
+    consumer: 0.20            # 소비재 최대 20%
+    others: 0.15              # 기타 최대 15%
+
+  # 시가총액별 분산
+  market_cap_limits:
+    large_cap: 0.60           # 대형주 최대 60%
+    mid_cap: 0.30             # 중형주 최대 30%
+    small_cap: 0.10           # 소형주 최대 10%
+
+  # 변동성 관리
+  volatility_limits:
+    max_portfolio_volatility: 0.25  # 포트폴리오 최대 변동성 25%
+    max_individual_volatility: 0.40 # 개별 종목 최대 변동성 40%
+
+# 시장별 리스크 설정
+market_specific_risk:
+  korean_market:
+    max_exposure: 0.70        # 한국 시장 최대 노출 70%
+    currency_hedge: false     # 환헤지 사용 여부
+
+  us_market:
+    max_exposure: 0.30        # 미국 시장 최대 노출 30%
+    currency_hedge: true      # 환헤지 사용 여부
+
+  # 시장 시간 제한
+  trading_hours_only: true    # 정규 시장 시간에만 거래
+  after_hours_trading: false  # 시간외 거래 허용 여부
+
+# 동적 리스크 조정
+dynamic_risk_adjustment:
+  # VIX 기반 조정
+  vix_based:
+    enabled: true
+    low_vix_threshold: 15     # 낮은 변동성 기준
+    high_vix_threshold: 30    # 높은 변동성 기준
+
+    low_vix_multiplier: 1.2   # 낮은 변동성 시 리스크 증가
+    high_vix_multiplier: 0.8  # 높은 변동성 시 리스크 감소
+
+  # 계좌 수익률 기반 조정
+  performance_based:
+    enabled: true
+    profit_threshold: 0.05    # 5% 이익 시 조정
+    loss_threshold: -0.03     # -3% 손실 시 조정
+
+    profit_multiplier: 1.1    # 이익 시 리스크 증가
+    loss_multiplier: 0.9      # 손실 시 리스크 감소
+
+# 비상 상황 관리
+emergency_procedures:
+  # 시장 급락 대응
+  market_crash:
+    trigger_threshold: -0.05  # 일일 -5% 하락 시 발동
+    action: "reduce_exposure" # 노출 감소
+    target_exposure: 0.50     # 목표 노출 50%
+
+  # 개별 종목 급락 대응
+  individual_crash:
+    trigger_threshold: -0.10  # 개별 종목 -10% 하락 시
+    action: "immediate_stop"  # 즉시 손절
+
+  # 시스템 오류 대응
+  system_failure:
+    auto_hedge: true          # 자동 헤지 활성화
+    emergency_liquidation: false # 비상 청산 (매우 극단적 상황)
+    notification_priority: "high"
+
+# 컴플라이언스 및 규제 준수
+compliance:
+  # 한국 금융당국 규제
+  korean_regulations:
+    short_selling_ban: true   # 공매도 금지 준수
+    price_limit_check: true   # 가격 제한폭 확인
+
+  # 미국 SEC 규제
+  us_regulations:
+    pdt_rule: true           # Pattern Day Trader 규칙 준수
+    wash_sale_rule: true     # 워시 세일 규칙 준수
+
+# 모니터링 및 알림
+monitoring:
+  # 실시간 모니터링
+  real_time_checks:
+    position_size: true       # 포지션 크기 모니터링
+    portfolio_exposure: true  # 포트폴리오 노출 모니터링
+    daily_pnl: true          # 일일 손익 모니터링
+
+  # 알림 설정
+  alerts:
+    risk_threshold_breach:
+      enabled: true
+      notification_method: ["telegram", "email"]
+
+    stop_loss_triggered:
+      enabled: true
+      notification_method: ["telegram"]
+
+    daily_loss_limit:
+      enabled: true
+      notification_method: ["telegram", "email", "sms"]
+
+# 백테스팅 리스크 설정
+backtesting_risk:
+  # 백테스팅 전용 제한
+  max_drawdown: 0.15         # 최대 드로우다운 15%
+  min_sharpe_ratio: 1.0      # 최소 샤프 비율
+  min_win_rate: 0.50         # 최소 승률 50%
+
+  # 스트레스 테스트
+  stress_test:
+    enabled: true
+    scenarios:
+      - name: "market_crash"
+        market_drop: -0.30
+      - name: "interest_rate_hike"
+        rate_increase: 0.02
+      - name: "currency_crisis"
+        krw_depreciation: 0.20
+
+# 리스크 보고서
+reporting:
+  # 일일 리스크 보고서
+  daily_report:
+    enabled: true
+    recipients: ["admin", "risk_manager"]
+    metrics:
+      - "current_exposure"
+      - "portfolio_var"
+      - "individual_risks"
+      - "compliance_status"
+
+  # 주간 리스크 분석
+  weekly_analysis:
+    enabled: true
+    deep_analysis: true
+    stress_test_results: true
+    risk_adjusted_performance: true

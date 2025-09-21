@@ -1,0 +1,182 @@
+# MCP (Model Context Protocol) Integration Configuration
+# Korea Investment Securities API Integration for Helper Agent
+# Claude.md 규칙 4에 따른 Helper Agent 독점 제어
+
+mcp_providers:
+  korea_investment:
+    name: "Korea Investment Securities MCP"
+    enabled: false  # Helper Agent에서 활성화 제어
+    priority: 1
+
+    # Authentication Configuration
+    authentication:
+      type: "oauth2"
+      app_key: "${KIS_APP_KEY}"
+      app_secret: "${KIS_APP_SECRET}"
+      token_endpoint: "https://openapi.koreainvestment.com:9443/oauth2/tokenP"
+      refresh_interval: 3600  # 1 hour
+      auto_refresh: true
+
+    # API Endpoints
+    endpoints:
+      base_url: "https://openapi.koreainvestment.com:9443"
+      api_version: "v1"
+
+      # Market Data
+      market_data:
+        current_price: "/uapi/domestic-stock/v1/quotations/inquire-price"
+        daily_price: "/uapi/domestic-stock/v1/quotations/inquire-daily-price"
+        minute_price: "/uapi/domestic-stock/v1/quotations/inquire-minute-price"
+        overseas_price: "/uapi/overseas-price/v1/quotations/price"
+
+      # Account Management
+      account:
+        balance: "/uapi/domestic-stock/v1/trading/inquire-balance"
+        portfolio: "/uapi/domestic-stock/v1/trading/inquire-portfolio"
+        orders: "/uapi/domestic-stock/v1/trading/inquire-orders"
+
+      # Trading Operations
+      trading:
+        order: "/uapi/domestic-stock/v1/trading/order-cash"
+        modify_order: "/uapi/domestic-stock/v1/trading/order-modify"
+        cancel_order: "/uapi/domestic-stock/v1/trading/order-cancel"
+        overseas_order: "/uapi/overseas-stock/v1/trading/order"
+
+    # Rate Limiting
+    rate_limits:
+      requests_per_second: 20
+      requests_per_minute: 1000
+      daily_limit: 100000
+      burst_limit: 50
+
+    # Market Support
+    supported_markets:
+      domestic:
+        - "KOSPI"
+        - "KOSDAQ"
+        - "KONEX"
+      overseas:
+        - "NYSE"
+        - "NASDAQ"
+        - "AMEX"
+        - "TSE"
+        - "SSE"
+        - "SZSE"
+        - "HKEX"
+
+    # MCP Features
+    features:
+      code_assistant:
+        enabled: true
+        description: "API usage guidance and code generation"
+        capabilities:
+          - "api_documentation_search"
+          - "sample_code_generation"
+          - "parameter_validation"
+          - "error_handling_guide"
+
+      trading_api:
+        enabled: true
+        description: "Real-time trading operations"
+        capabilities:
+          - "real_time_quotes"
+          - "order_placement"
+          - "portfolio_management"
+          - "risk_monitoring"
+
+      account_management:
+        enabled: true
+        description: "Account and balance operations"
+        capabilities:
+          - "balance_inquiry"
+          - "position_tracking"
+          - "transaction_history"
+          - "account_validation"
+
+# Helper Agent MCP Configuration
+helper_agent_mcp:
+  exclusive_control: true  # Claude.md 규칙 4 준수
+  activation_mode: "manual"  # manual, auto, scheduled
+
+  # Activation Macros
+  macros:
+    activate_kis_mcp:
+      description: "Activate Korea Investment MCP integration"
+      commands:
+        - "validate_credentials"
+        - "test_connection"
+        - "enable_features"
+        - "start_monitoring"
+
+    deactivate_kis_mcp:
+      description: "Deactivate Korea Investment MCP integration"
+      commands:
+        - "disable_features"
+        - "clear_tokens"
+        - "stop_monitoring"
+        - "cleanup_resources"
+
+    configure_kis_mcp:
+      description: "Configure Korea Investment MCP settings"
+      parameters:
+        - "app_key"
+        - "app_secret"
+        - "market_selection"
+        - "feature_selection"
+
+    test_kis_mcp:
+      description: "Test Korea Investment MCP connectivity"
+      validations:
+        - "auth_test"
+        - "api_connectivity"
+        - "rate_limit_check"
+        - "market_data_test"
+
+# Security Settings
+security:
+  credential_encryption: true
+  token_storage: "encrypted_file"
+  access_logging: true
+  audit_trail: true
+
+  # Helper Agent 전용 보안
+  helper_exclusive:
+    file_access_control: true
+    modification_rights: "helper_only"
+    validation_required: true
+
+# Monitoring and Logging
+monitoring:
+  enabled: true
+  metrics:
+    - "api_response_time"
+    - "success_rate"
+    - "error_rate"
+    - "rate_limit_usage"
+    - "cost_tracking"
+
+  alerts:
+    - "connection_failure"
+    - "rate_limit_exceeded"
+    - "authentication_error"
+    - "quota_warning"
+
+# Integration Templates
+templates:
+  market_data_request:
+    type: "standard"
+    timeout: 5000
+    retry_attempts: 3
+    fallback_enabled: true
+
+  trading_request:
+    type: "high_priority"
+    timeout: 3000
+    retry_attempts: 2
+    confirmation_required: true
+
+  account_request:
+    type: "secure"
+    timeout: 10000
+    retry_attempts: 1
+    encryption_required: true

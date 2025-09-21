@@ -331,7 +331,41 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [Project Configuration Guide](./config/README.md)
 - [Agent Development Guide](./agents/README.md)
 
+## 📋 Recent Updates
+
+### ✅ Architecture Cleanup Complete (2025-09-10)
+
+#### Agent Structure Simplified (8 → 4 agents):
+- **data_agent**: Data Gathering Service & Technical Indicator Management
+- **strategy_agent**: Trading Strategy Development & Signal Generation
+- **service_agent**: Backtesting, Trading Execution & Database Management
+- **helper_agent**: External API Management & Broker Connections
+
+#### Removed Agents:
+- ~~api_agent~~ → Merged into helper_agent
+- ~~backtest_agent~~ → Merged into service_agent
+- ~~trade_agent~~ → Merged into service_agent
+- ~~evaluation_agent~~ → Removed
+- ~~getstockdata_agent~~ → Merged into data_agent
+- ~~model_agent~~ → Removed
+
+#### Configuration Files Updated:
+- ✅ `config/agent_interfaces.yaml` - 4-agent configuration
+- ✅ `config/collaboration_matrix.yaml` - Updated collaboration relationships
+- ✅ `config/file_ownership.yaml` - Redefined file ownership
+- ✅ `shared/claude_client.py` - 4-agent model mapping
+- ✅ `shared/multi_agent_system.py` - Updated agent initialization
+- ✅ `management/agent_management_system.py` - 4-agent management
+
+#### Layer Structure:
+```
+Indicator Layer    : data_agent (Data Gathering Service)
+Strategy Layer     : strategy_agent
+Service Layer      : service_agent, helper_agent
+Database Layer     : service_agent (Integrated Management)
+```
+
 ---
 
-*Last Updated: 2025-09-11*
+*Last Updated: 2025-09-15*
 *Architecture Version: 4-Agent Enhanced Management System*

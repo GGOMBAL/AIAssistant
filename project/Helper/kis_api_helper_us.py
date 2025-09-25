@@ -181,11 +181,105 @@ class KISUSHelper:
             return False
     
     def get_balance(self, currency: str = "USD") -> Dict[str, Any]:
-        """Get overseas account balance"""
+        """Get overseas account balance - based on reference GetBalance function"""
         try:
             if not self.token:
                 if not self.make_token():
                     raise Exception("Authentication failed")
+
+            import time
+            time.sleep(0.2)
+
+            # API path and URL setup
+            path = "uapi/overseas-stock/v1/trading/inquire-present-balance"
+            url = f"{self.base_url}/{path}"
+
+            # Transaction ID based on account type
+            tr_id = "CTRP6504R"  # Real account
+            if self.config.get('is_virtual', False):
+                tr_id = "VTRP6504R"  # Virtual account
+
+            # Request parameters
+            params = {
+                "CANO": self.account_no,
+                "ACNT_PRDT_CD": self.product_code,
+                "WCRC_FRCR_DVSN_CD": "02",
+                "NATN_CD": "840",  # US country code
+                "TR_MKET_CD": "00",  # Market code
+                "INQR_DVSN_CD": "00"  # Inquiry division
+            }
+
+            # Request headers
+            headers = {
+                "Content-Type": "application/json",
+                "authorization": f"Bearer {self.token}",
+                "appKey": self.app_key,
+                "appSecret": self.app_secret,
+                "tr_id": tr_id,
+                "custtype": "P"
+            }
+
+            # Make request
+            response = requests.get(url, headers=headers, params=params)
+
+            if response.status_code == 200:
+                result = response.json()
+
+                if result.get("rt_cd") == '0':
+                    # Parse balance data like reference function
+                    output2 = result.get('output2', [])
+                    output3 = result.get('output3', {})
+
+                    # Get stock holdings for accurate calculation
+                    my_stocks = self.get_holdings()
+
+                    stock_original_total = sum(float(stock.get('original_value', 0)) for stock in my_stocks)
+                    stock_current_total = sum(float(stock.get('market_value', 0)) for stock in my_stocks)
+
+                    balance_dict = {}
+                    exchange_rate = 1200  # Default rate
+
+                    if currency == "USD":
+                        # Find USD data in output2
+                        for data in output2:
+                            if data.get('crcy_cd') == "USD":
+                                # Available cash (order possible amount)
+                                balance_dict['RemainMoney'] = (
+                                    float(data.get('frcr_dncl_amt_2', 0)) -
+                                    float(data.get('frcr_buy_amt_smtl', 0)) +
+                                    float(data.get('frcr_sll_amt_smtl', 0))
+                                )
+                                exchange_rate = data.get('frst_bltn_exrt', 1200)
+                                break
+
+                        # Handle virtual account edge case
+                        if self.config.get('is_virtual', False) and balance_dict.get('RemainMoney', 0) == 0:
+                            # Use output3 for virtual account
+                            balance_dict['StockMoney'] = stock_current_total
+                            balance_dict['StockRevenue'] = stock_current_total - stock_original_total
+                            balance_dict['RemainMoney'] = float(output3.get('frcr_evlu_tota', 0)) / float(exchange_rate)
+                            balance_dict['TotalMoney'] = balance_dict['StockMoney'] + balance_dict['RemainMoney']
+                        else:
+                            # Real account calculation
+                            balance_dict['StockMoney'] = stock_current_total
+                            balance_dict['StockRevenue'] = stock_current_total - stock_original_total
+                            balance_dict['TotalMoney'] = balance_dict['StockMoney'] + balance_dict['RemainMoney']
+
+                    # Convert to standard format
+                    return {
+                        'total_balance': balance_dict.get('TotalMoney', 0),
+                        'cash_balance': balance_dict.get('RemainMoney', 0),
+                        'stock_value': balance_dict.get('StockMoney', 0),
+                        'revenue': balance_dict.get('StockRevenue', 0),
+                        'currency': currency,
+                        'exchange_rate': exchange_rate
+                    }
+                else:
+                    logger.error(f"API error: {result.get('msg1', 'Unknown error')}")
+                    return {}
+            else:
+                logger.error(f"HTTP error: {response.status_code} - {response.text}")
+                return {}
             
             time_module.sleep(0.2)  # Rate limiting
             
@@ -229,6 +323,108 @@ class KISUSHelper:
         except Exception as e:
             logger.error(f"Error getting US balance: {e}")
             return {}
+
+    def get_holdings(self, currency: str = "USD") -> List[Dict[str, Any]]:
+        """Get overseas stock holdings - based on reference GetMyStockList function"""
+        try:
+            if not self.token:
+                if not self.make_token():
+                    raise Exception("Authentication failed")
+
+            import time
+            stock_list = []
+
+            # API path setup
+            path = "uapi/overseas-stock/v1/trading/inquire-balance"
+            url = f"{self.base_url}/{path}"
+
+            # Check multiple markets like reference function
+            markets_to_check = [
+                {"market": "NASD", "currency": "USD"},  # NASDAQ
+                {"market": "NYS", "currency": "USD"},   # NYSE
+                {"market": "AMEX", "currency": "USD"},  # AMEX
+                {"market": "SEHK", "currency": "HKD"}   # Hong Kong (if needed)
+            ]
+
+            for market_info in markets_to_check:
+                if currency == "USD" and market_info["currency"] != "USD":
+                    continue  # Skip non-USD markets when requesting USD
+
+                try:
+                    time.sleep(0.2)  # Rate limiting
+
+                    # Transaction ID based on account type
+                    tr_id = "TTTS3012R"  # Real account
+                    if self.config.get('is_virtual', False):
+                        tr_id = "VTTS3012R"  # Virtual account
+
+                    # Request parameters
+                    params = {
+                        "CANO": self.account_no,
+                        "ACNT_PRDT_CD": self.product_code,
+                        "OVRS_EXCG_CD": market_info["market"],
+                        "TR_CRCY_CD": market_info["currency"],
+                        "CTX_AREA_FK200": "",
+                        "CTX_AREA_NK200": ""
+                    }
+
+                    # Request headers
+                    headers = {
+                        "Content-Type": "application/json",
+                        "authorization": f"Bearer {self.token}",
+                        "appKey": self.app_key,
+                        "appSecret": self.app_secret,
+                        "tr_id": tr_id,
+                        "custtype": "P"
+                    }
+
+                    # Make request
+                    response = requests.get(url, headers=headers, params=params)
+
+                    if response.status_code == 200:
+                        result = response.json()
+
+                        if result.get("rt_cd") == '0':
+                            # Parse holdings data
+                            output1 = result.get('output1', [])
+
+                            for stock_data in output1:
+                                # Only include stocks with positive holdings
+                                quantity = float(stock_data.get('ovrs_cblc_qty', 0))
+                                if quantity > 0:
+                                    # Calculate values
+                                    avg_price = float(stock_data.get('pchs_avg_pric', 0))
+                                    current_price = float(stock_data.get('now_pric2', 0))
+                                    original_value = quantity * avg_price
+                                    market_value = quantity * current_price
+                                    profit_loss = market_value - original_value
+                                    profit_rate = (profit_loss / original_value * 100) if original_value > 0 else 0
+
+                                    stock_info = {
+                                        'symbol': stock_data.get('ovrs_pdno', ''),
+                                        'company_name': stock_data.get('ovrs_item_name', ''),
+                                        'quantity': quantity,
+                                        'avg_price': avg_price,
+                                        'current_price': current_price,
+                                        'original_value': original_value,
+                                        'market_value': market_value,
+                                        'profit_loss': profit_loss,
+                                        'profit_rate': profit_rate,
+                                        'currency': market_info["currency"],
+                                        'market': market_info["market"]
+                                    }
+                                    stock_list.append(stock_info)
+
+                except Exception as market_error:
+                    logger.warning(f"Error checking {market_info['market']} market: {market_error}")
+                    continue
+
+            logger.info(f"Found {len(stock_list)} holdings across all markets")
+            return stock_list
+
+        except Exception as e:
+            logger.error(f"Error getting holdings: {e}")
+            return []
     
     def get_current_price(self, stock_code: str) -> float:
         """Get current price for US stock"""

@@ -82,22 +82,29 @@ class KISBrokerAPI(BrokerAPIBase):
         """Setup API credentials based on account type"""
         if not self.config:
             return
-            
+
         try:
             if self.account_type == "REAL":
                 self.app_key = self.config.get("REAL_APP_KEY", "")
                 self.app_secret = self.config.get("REAL_APP_SECRET", "")
-                self.account_no = self.config.get("REAL_ACCOUNT_NO", "")
-                self.product_code = self.config.get("REAL_PRODUCT_CODE", "")
-                self.base_url = self.config.get("REAL_BASE_URL", "")
+                self.account_no = self.config.get("REAL_CANO", "")
+                self.product_code = self.config.get("REAL_ACNT_PRDT_CD", "01")
+                self.base_url = self.config.get("REAL_URL", "")
             elif self.account_type == "VIRTUAL":
-                self.app_key = self.config.get("VIRTUAL_APP_KEY", "")
-                self.app_secret = self.config.get("VIRTUAL_APP_SECRET", "")
-                self.account_no = self.config.get("VIRTUAL_ACCOUNT_NO", "")
-                self.product_code = self.config.get("VIRTUAL_PRODUCT_CODE", "")
-                self.base_url = self.config.get("VIRTUAL_BASE_URL", "")
-            
+                self.app_key = self.config.get("VIRTUAL1_APP_KEY", "")
+                self.app_secret = self.config.get("VIRTUAL1_APP_SECRET", "")
+                self.account_no = self.config.get("VIRTUAL1_CANO", "")
+                self.product_code = self.config.get("VIRTUAL1_ACNT_PRDT_CD", "01")
+                self.base_url = self.config.get("VIRTUAL_URL", "")
+
             self.current_dist = self.account_type
+
+            # 디버깅용 로그
+            logger.info(f"KIS API 설정 완료:")
+            logger.info(f"  계정 타입: {self.account_type}")
+            logger.info(f"  계좌번호: {self.account_no}")
+            logger.info(f"  상품코드: {self.product_code}")
+            logger.info(f"  기본 URL: {self.base_url}")
         except Exception as e:
             logger.error(f"Failed to setup KIS credentials: {e}")
     

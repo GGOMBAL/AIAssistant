@@ -25,7 +25,6 @@ try:
     DATABASE_AVAILABLE = True
 except ImportError:
     DATABASE_AVAILABLE = False
-    logger.warning("Database Layer not available - using simulation mode")
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -36,8 +35,8 @@ class DataFrameGenerator:
     Strategy Agent has exclusive management of this class
     """
     
-    def __init__(self, universe: List[str], market: str, area: str, 
-                 start_day: datetime, end_day: datetime):
+    def __init__(self, universe: List[str] = None, market: str = 'US', area: str = 'US',
+                 start_day: datetime = None, end_day: datetime = None):
         """
         Initialize DataFrameGenerator
         
@@ -49,9 +48,18 @@ class DataFrameGenerator:
             end_day: End date for data
         """
         pd.set_option('future.no_silent_downcasting', True)
-        
+
         self.market = market
         self.area = area
+
+        # Set default dates if not provided
+        if start_day is None:
+            start_day = datetime.now() - timedelta(days=365)
+        if end_day is None:
+            end_day = datetime.now()
+        if universe is None:
+            universe = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA"]
+
         self.start_day = start_day
         self.data_start_day = start_day - timedelta(days=365*3)  # 3 years of historical data
         self.end_day = end_day
@@ -88,20 +96,20 @@ class DataFrameGenerator:
             if DATABASE_AVAILABLE:
                 # Use Database Layer (same as refer implementation)
                 logger.info(f"Reading {data_type} data from MongoDB for {area} market")
-                
+
                 db = MongoDBOperations(DB_address="MONGODB_LOCAL")
                 database_name = calculate_database_name(market, area, data_type, "Stock")
-                
+
                 # Call ReadDataBase method (equivalent to refer implementation)
                 df_dict, updated_universe = self._read_from_mongodb(
                     db, universe, market, area, database_name, data_start_day, end_day
                 )
-                
+
                 return data_type, df_dict, updated_universe
             else:
-                # Fallback to simulation mode
-                logger.warning(f"Database not available, simulating {data_type} data")
-                return self._simulate_database_read(data_type, universe, data_start_day, end_day)
+                # Use Helper Layer to get real market data when database is not available
+                logger.info(f"Database not available, using Helper Layer for {data_type} data")
+                return self._get_helper_data(data_type, universe, data_start_day, end_day)
                 
         except Exception as e:
             logger.error(f"Error reading {data_type} data: {e}")
@@ -109,7 +117,7 @@ class DataFrameGenerator:
             df_dict = {symbol: pd.DataFrame() for symbol in universe}
             return data_type, df_dict, universe
     
-    def _read_from_mongodb(self, db: MongoDBOperations, universe: List[str], 
+    def _read_from_mongodb(self, db: Any, universe: List[str], 
                           market: str, area: str, database_name: str, 
                           data_start_day: datetime, end_day: datetime) -> Tuple[Dict, List[str]]:
         """
@@ -184,6 +192,95 @@ class DataFrameGenerator:
             
         except Exception as e:
             logger.error(f"Error in simulation mode: {e}")
+            return data_type, {}, []
+
+    def _get_helper_data(self, data_type: str, universe: List[str],
+                        data_start_day: datetime, end_day: datetime) -> Tuple[str, Dict, List[str]]:
+        """
+        Get real market data using Helper Layer when database is not available
+
+        Args:
+            data_type: Type of data (W, RS, AD, E, F)
+            universe: List of stock symbols
+            data_start_day: Start date
+            end_day: End date
+
+        Returns:
+            Tuple of (data_type, dataframe_dict, updated_universe)
+        """
+        try:
+            # Only get data for AD (daily data) using Helper
+            if data_type == "AD":
+                return self._get_market_data_from_helper_v2(data_type, universe, data_start_day, end_day)
+            else:
+                # For other data types, return placeholder
+                return self._simulate_database_read(data_type, universe, data_start_day, end_day)
+        except Exception as e:
+            logger.error(f"Error getting helper data for {data_type}: {e}")
+            return self._simulate_database_read(data_type, universe, data_start_day, end_day)
+
+    def _get_market_data_from_helper_v2(self, data_type: str, universe: List[str],
+                                       data_start_day: datetime, end_day: datetime) -> Tuple[str, Dict, List[str]]:
+        """
+        Get real market data using Helper functions (updated version)
+
+        Args:
+            data_type: Data type
+            universe: List of stock symbols
+            data_start_day: Start date
+            end_day: End date
+
+        Returns:
+            Tuple of (data_type, dataframe_dict, updated_universe)
+        """
+        try:
+            # Import Helper functions (read-only access)
+            from Project.Helper.yfinance_helper import YFinanceHelper
+
+            yf = YFinanceHelper()
+            df_dict = {}
+            successful_tickers = []
+
+            for symbol in universe:
+                try:
+                    # Get OHLCV data using Helper function
+                    df = yf.get_ohlcv(symbol, "D", data_start_day, end_day)
+
+                    if not df.empty:
+                        # Rename to match refer format
+                        df = df.rename(columns={
+                            'open': 'ad_open',
+                            'high': 'ad_high',
+                            'low': 'ad_low',
+                            'close': 'ad_close',
+                            'volume': 'volume'
+                        })
+
+                        # Add required columns
+                        if 'dividends' in df.columns:
+                            df['dividend_factor'] = df['dividends']
+                        else:
+                            df['dividend_factor'] = 0.0
+
+                        if 'stock_splits' in df.columns:
+                            df['split_factor'] = df['stock_splits']
+                        else:
+                            df['split_factor'] = 0.0
+
+                        df_dict[symbol] = df
+                        successful_tickers.append(symbol)
+                        logger.info(f"Retrieved {len(df)} records for {symbol}")
+                    else:
+                        logger.warning(f"No data retrieved for {symbol}")
+
+                except Exception as e:
+                    logger.error(f"Error getting data for {symbol}: {e}")
+                    continue
+
+            return data_type, df_dict, successful_tickers
+
+        except Exception as e:
+            logger.error(f"Error in _get_market_data_from_helper_v2: {e}")
             return data_type, {}, []
 
     def _get_market_data_from_helper(self, universe: List[str], data_type: str) -> Dict[str, pd.DataFrame]:

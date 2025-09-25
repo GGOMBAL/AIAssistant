@@ -239,3 +239,6 @@ Thumbs.db
 *.tmp
 *.bak
 *.backup
+
+# Reference files (kept locally but not in repo)
+refer/

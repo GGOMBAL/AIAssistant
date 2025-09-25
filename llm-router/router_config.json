@@ -1,0 +1,151 @@
+{
+  "server": {
+    "port": 3000,
+    "host": "localhost",
+    "cors": {
+      "enabled": true,
+      "origins": ["http://localhost:*"]
+    }
+  },
+  "providers": {
+    "anthropic": {
+      "enabled": true,
+      "models": [
+        "claude-3-opus-20240229",
+        "claude-3-sonnet-20240229",
+        "claude-3-haiku-20240307"
+      ],
+      "api_endpoint": "https://api.anthropic.com/v1/messages",
+      "rate_limits": {
+        "requests_per_minute": 30,
+        "tokens_per_minute": 100000
+      }
+    },
+    "google": {
+      "enabled": true,
+      "models": [
+        "gemini-pro",
+        "gemini-pro-vision"
+      ],
+      "api_endpoint": "https://generativelanguage.googleapis.com/v1/models",
+      "rate_limits": {
+        "requests_per_minute": 60,
+        "tokens_per_minute": 200000
+      }
+    }
+  },
+  "routing": {
+    "strategy": "agent_based",
+    "load_balancing": "round_robin",
+    "fallback": {
+      "enabled": true,
+      "retry_attempts": 3,
+      "timeout_ms": 30000
+    }
+  },
+  "agent_mappings": {
+    "orchestrator": {
+      "primary": "claude-3-opus-20240229",
+      "fallback": "claude-3-sonnet-20240229",
+      "strategy": "quality_first"
+    },
+    "data_agent": {
+      "primary": "claude-3-sonnet-20240229",
+      "fallback": "gemini-pro",
+      "strategy": "efficiency_first"
+    },
+    "strategy_agent": {
+      "primary": "claude-3-opus-20240229",
+      "fallback": "claude-3-sonnet-20240229",
+      "strategy": "quality_first"
+    },
+    "service_agent": {
+      "primary": "claude-3-sonnet-20240229",
+      "fallback": "claude-3-haiku-20240307",
+      "strategy": "reliability_first"
+    },
+    "helper_agent": {
+      "primary": "claude-3-sonnet-20240229",
+      "fallback": "gemini-pro",
+      "strategy": "cost_efficiency"
+    }
+  },
+  "task_mappings": {
+    "data_processing": {
+      "large_dataset": "gemini-pro",
+      "normal_dataset": "claude-3-sonnet-20240229",
+      "simple_calculation": "claude-3-haiku-20240307"
+    },
+    "strategy_development": {
+      "complex_strategy": "claude-3-opus-20240229",
+      "signal_generation": "claude-3-sonnet-20240229",
+      "parameter_optimization": "gemini-pro"
+    },
+    "service_operations": {
+      "backtesting": "claude-3-sonnet-20240229",
+      "order_execution": "claude-3-haiku-20240307",
+      "risk_monitoring": "claude-3-sonnet-20240229"
+    }
+  },
+  "mcp_integration": {
+    "korea_investment": {
+      "enabled": false,
+      "endpoint": "https://openapi.koreainvestment.com:9443",
+      "version": "v1",
+      "features": {
+        "code_assistant": {
+          "enabled": true,
+          "description": "API usage guidance and sample code generation"
+        },
+        "trading_api": {
+          "enabled": true,
+          "description": "Real-time trading and market data access"
+        },
+        "account_management": {
+          "enabled": true,
+          "description": "Account balance and portfolio management"
+        }
+      },
+      "auth": {
+        "oauth_enabled": true,
+        "token_refresh_interval": 3600,
+        "app_key_required": true,
+        "app_secret_required": true
+      },
+      "rate_limits": {
+        "requests_per_second": 20,
+        "requests_per_minute": 1000,
+        "daily_limit": 100000
+      },
+      "supported_markets": [
+        "KOSPI",
+        "KOSDAQ",
+        "US_STOCK",
+        "FUTURES",
+        "OPTIONS",
+        "BONDS"
+      ]
+    }
+  },
+  "monitoring": {
+    "enabled": true,
+    "metrics": {
+      "response_time": true,
+      "success_rate": true,
+      "cost_tracking": true,
+      "usage_statistics": true
+    },
+    "logging": {
+      "level": "info",
+      "file": "./logs/router.log"
+    }
+  },
+  "security": {
+    "api_key_rotation": {
+      "enabled": true,
+      "interval_hours": 24
+    },
+    "request_validation": true,
+    "rate_limiting": true
+  }
+}

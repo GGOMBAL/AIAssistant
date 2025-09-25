@@ -1,18 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(tree:*)",
-      "Bash(git checkout:*)",
-      "Bash(git stash:*)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(git push:*)",
-      "Bash(mkdir:*)",
-      "Bash(python:*)",
-      "Bash(git reset:*)",
-      "Bash(set PYTHONPATH=%CD%)",
-      "Bash(chcp:*)",
-      "Bash(git fetch:*)"
+      "Bash(pip install:*)",
+      "Bash(findstr:*)",
+      "Bash(timeout:*)",
+      "Bash(if not exist jsontoken mkdir jsontoken)"
     ],
     "deny": [],
     "ask": []

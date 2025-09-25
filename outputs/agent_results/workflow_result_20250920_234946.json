@@ -1,0 +1,58 @@
+{
+  "workflow_id": "interaction_20250920_234856_090",
+  "user_request": "AAPL 주식에 대한 종합적인 기술적 분석을 수행하고, 단기 및 중기 매매 전략을 개발해주세요. 백테스팅도 포함해서 실행해주세요.",
+  "workflow_type": "comprehensive",
+  "execution_timestamp": "2025-09-20T23:49:46.160975",
+  "agent_results": [
+    {
+      "interaction_id": "interaction_20250920_234856_090_strategy_agent",
+      "timestamp": "2025-09-20T23:48:56.090366",
+      "user_prompt": "AAPL 주식에 대한 종합적인 기술적 분석을 수행하고, 단기 및 중기 매매 전략을 개발해주세요. 백테스팅도 포함해서 실행해주세요.",
+      "agent_name": "strategy_agent",
+      "status": "completed",
+      "quality_score": 10.0,
+      "has_corrections": true,
+      "correction_count": 10,
+      "response_length": 67,
+      "has_final_output": true
+    },
+    {
+      "interaction_id": "interaction_20250920_234856_090_service_agent",
+      "timestamp": "2025-09-20T23:48:56.090366",
+      "user_prompt": "AAPL 주식에 대한 종합적인 기술적 분석을 수행하고, 단기 및 중기 매매 전략을 개발해주세요. 백테스팅도 포함해서 실행해주세요.",
+      "agent_name": "service_agent",
+      "status": "completed",
+      "quality_score": 10.0,
+      "has_corrections": false,
+      "correction_count": 0,
+      "response_length": 1915,
+      "has_final_output": true
+    }
+  ],
+  "project_integration": {
+    "files_created": [],
+    "files_updated": [],
+    "indicators_generated": [],
+    "strategies_created": [
+      "Project\\strategy\\trading_strategy_20250920_234946.py"
+    ],
+    "services_configured": [
+      "Project\\service\\backtest_service_20250920_234946.py"
+    ]
+  },
+  "quality_metrics": {
+    "average_quality_score": 10.0,
+    "minimum_quality_score": 10.0,
+    "maximum_quality_score": 10.0,
+    "agents_reviewed": 2,
+    "total_agents": 2,
+    "review_coverage": 1.0
+  },
+  "next_actions": [
+    "strategy_agent 교정사항 적용 확인",
+    "생성된 파일들을 프로젝트에 통합",
+    "백테스팅 실행하여 전략 검증",
+    "실시간 데이터로 전략 테스트",
+    "리스크 관리 파라미터 조정"
+  ]
+}

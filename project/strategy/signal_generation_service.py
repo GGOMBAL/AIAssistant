@@ -110,24 +110,43 @@ class SignalGenerationService:
 
     def _generate_weekly_signals(self, df_weekly: pd.DataFrame) -> int:
         """
-        주봉 신호 생성
-        Strategy_A.py의 generate_signals_W 로직
+        주봉 신호 생성 - refer Strategy_A.py lines 99-105와 완전 동일한 로직
         """
         try:
-            if df_weekly.empty or len(df_weekly) < 2:
+            if df_weekly.empty or len(df_weekly) < 3:  # shift(2) 때문에 최소 3개 필요
                 return 0
 
             latest = df_weekly.iloc[-1]
 
-            # 주봉 조건들
-            condition1 = latest.get('1Year_H', 0) == latest.get('2Year_H', 0)
-            condition2 = latest.get('2Year_L', 0) < latest.get('1Year_L', 0)
-            condition3 = latest.get('52_H', 0) <= latest.get('52_H', 0) * 1.05  # 이전 값과 비교
-            condition4 = latest.get('Wclose', 0) > latest.get('52_L', 0) * 1.3
-            condition5 = latest.get('Wclose', 0) > latest.get('52_H', 0) * 0.7
+            # 이전 데이터들
+            if len(df_weekly) >= 2:
+                prev_1 = df_weekly.iloc[-2]
+            else:
+                return 0
 
-            # 모든 조건을 만족하면 매수 신호
-            if all([condition1, condition2, condition3, condition4, condition5]):
+            if len(df_weekly) >= 3:
+                prev_2 = df_weekly.iloc[-3]
+            else:
+                return 0
+
+            # refer Strategy_A.py lines 99-103: 정확한 조건들
+            # wCondition1 = 1Year_H == 2Year_H
+            w_condition1 = latest.get('1Year_H', 0) == latest.get('2Year_H', 0)
+
+            # wCondition2 = 2Year_L < 1Year_L
+            w_condition2 = latest.get('2Year_L', 0) < latest.get('1Year_L', 0)
+
+            # wCondition3 = 52_H <= 52_H.shift(2) * 1.05
+            w_condition3 = latest.get('52_H', 0) <= prev_2.get('52_H', 0) * 1.05
+
+            # wCondition4 = Wclose.shift(1) > 52_L * 1.3
+            w_condition4 = prev_1.get('Wclose', 0) > latest.get('52_L', 0) * 1.3
+
+            # wCondition5 = Wclose.shift(1) > 52_H * 0.7
+            w_condition5 = prev_1.get('Wclose', 0) > latest.get('52_H', 0) * 0.7
+
+            # refer line 105: 모든 조건을 AND로 결합
+            if w_condition1 and w_condition2 and w_condition3 and w_condition4 and w_condition5:
                 return 1
 
             return 0
@@ -181,19 +200,32 @@ class SignalGenerationService:
                     return 1
 
             else:
-                # 미국 시장 조건
+                # 미국 시장 조건 - refer Strategy_A.py line 184와 동일한 조건
                 market_cap = latest.get('MarketCapitalization', 0)
                 rev_yoy = latest.get('REV_YOY', 0)
                 eps_yoy = latest.get('EPS_YOY', 0)
                 revenue = latest.get('revenue', 0)
 
-                condition1 = market_cap >= 2000000000  # 시가총액 > 20억USD
-                condition2 = market_cap <= 20000000000000  # 시가총액 < 200억USD
-                condition3 = rev_yoy >= 0.1
-                condition4 = eps_yoy >= 0.1
-                condition5 = revenue > 0
+                # 이전 데이터가 있는지 확인
+                if len(df_fundamental) >= 2:
+                    prev = df_fundamental.iloc[-2]
+                    prev_rev_yoy = prev.get('REV_YOY', 0)
+                    prev_eps_yoy = prev.get('EPS_YOY', 0)
+                else:
+                    prev_rev_yoy = 0
+                    prev_eps_yoy = 0
 
-                if condition1 and (condition3 or condition4) and condition5:
+                # refer와 동일한 조건식
+                f_condition1 = market_cap >= 2000000000  # 시가총액 > 20억USD
+                f_condition2 = market_cap <= 20000000000000  # 시가총액 < 20조USD
+                f_condition3 = rev_yoy >= 0.1  # 매출 YoY >= 10%
+                f_condition4 = prev_rev_yoy >= 0  # 전기 매출 YoY >= 0%
+                f_condition6 = eps_yoy >= 0.1  # EPS YoY >= 10%
+                f_condition7 = prev_eps_yoy >= 0  # 전기 EPS YoY >= 0%
+                f_condition9 = revenue > 0  # 매출 > 0
+
+                # refer line 184: (매출 성장 조건) OR (EPS 성장 조건)
+                if f_condition1 and ((f_condition3 and f_condition4) or (f_condition6 and f_condition7)) and f_condition9:
                     return 1
 
             return 0

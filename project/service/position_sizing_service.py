@@ -308,44 +308,100 @@ class PositionSizingService(BaseService, IPositionSizingService):
             return {'passed': False, 'reason': f'Risk check error: {e}'}
 
     async def _calculate_position_size(self, signal: TradingSignal) -> float:
-        """포지션 사이즈 계산"""
+        """정교한 포지션 사이즈 계산 (DailyBacktestService 로직 적용)"""
         try:
             if not self.current_portfolio:
                 return 0.0
 
-            # 포트폴리오 기반 사이징 방법 사용
+            # 현재 가격 및 ADR 정보 조회
+            current_price = await self._get_current_price(signal.symbol)
+            if not current_price or current_price <= 0:
+                return 0.0
 
-            # 1. 기본 사이징 (포트폴리오 비율 기반)
-            base_size = self.current_portfolio.total_value * 0.02  # 기본 2%
+            # ADR (Average Daily Range) 계산 또는 기본값 사용
+            adr = await self._get_adr_for_symbol(signal.symbol)
+            if adr <= 0:
+                adr = 3.0  # 기본 ADR 3%
 
-            # 2. 신뢰도 기반 조정
-            confidence_multiplier = signal.confidence  # 0.5 ~ 1.0
-            adjusted_size = base_size * confidence_multiplier
+            # 정교한 포지션 비율 계산 (백테스트 엔진 로직)
+            position_ratio = self._calculate_sophisticated_position_ratio(adr, signal)
 
-            # 3. 볼라틸리티 기반 조정 (임시로 고정값 사용)
-            volatility_adjustment = 1.0  # 실제로는 종목별 변동성 계산 필요
-            volatility_adjusted_size = adjusted_size * volatility_adjustment
+            # 포트폴리오 총 가치 대비 투자금액
+            target_amount = self.current_portfolio.total_value * position_ratio
 
-            # 4. Kelly Criterion 적용 (단순화된 버전)
-            if signal.expected_return and signal.expected_return > 0:
-                kelly_fraction = min(signal.expected_return * signal.confidence, 0.05)  # 최대 5%
-                kelly_size = self.current_portfolio.total_value * kelly_fraction
-                volatility_adjusted_size = min(volatility_adjusted_size, kelly_size)
+            # 현금 가용성 확인 (90% 한도)
+            if target_amount > self.available_cash:
+                target_amount = self.available_cash * 0.9
 
-            # 5. 한도 적용
-            max_allowed = self.current_portfolio.total_value * self.max_position_size
-            min_required = self.min_order_amount
+            # 최소 투자 금액 확인 (총 자산의 1%)
+            min_investment = self.current_portfolio.total_value * 0.01
+            if target_amount < min_investment:
+                return 0.0
 
-            final_size = max(min(volatility_adjusted_size, max_allowed), min_required)
+            # 최소/최대 금액 제한
+            target_amount = max(target_amount, self.min_order_amount)
+            target_amount = min(target_amount, self.max_order_amount)
 
-            # 6. 사용 가능 현금 확인
-            final_size = min(final_size, self.available_cash)
+            self.logger.debug(f"[PositionSizing] {signal.symbol} 포지션 계산: "
+                             f"ADR={adr:.1f}%, ratio={position_ratio:.3f}, "
+                             f"target=${target_amount:,.0f}")
 
-            return final_size
+            return target_amount
 
         except Exception as e:
             self.log_error(f"포지션 사이즈 계산 실패: {e}")
             return 0.0
+
+    def _calculate_sophisticated_position_ratio(self, adr: float, signal: TradingSignal) -> float:
+        """정교한 포지션 비율 계산 (DailyBacktestService 방식)"""
+        try:
+            # 기본 비율 (20%)
+            base_ratio = 0.2
+
+            # ADR 기반 변동성 조정
+            if adr >= 5:
+                volatility_ratio = base_ratio / 2  # 고변동성 → 10%
+            elif adr <= 2:
+                volatility_ratio = base_ratio * 1.5  # 저변동성 → 30%
+            else:
+                volatility_ratio = base_ratio  # 일반변동성 → 20%
+
+            # 신호 신뢰도 조정
+            confidence_multiplier = min(signal.confidence, 1.0)
+
+            # 기대 수익률 조정
+            expected_return = getattr(signal, 'expected_return', 0.05)
+            return_multiplier = min(expected_return / 0.05, 1.5)  # 최대 1.5배
+
+            # 최종 비율 계산
+            final_ratio = volatility_ratio * confidence_multiplier * return_multiplier
+
+            # 최대 포지션 크기 제한 (10%)
+            final_ratio = min(final_ratio, self.max_position_size)
+
+            return final_ratio
+
+        except Exception as e:
+            self.logger.error(f"정교한 포지션 비율 계산 실패: {e}")
+            return 0.05  # 기본값 5%
+
+    async def _get_adr_for_symbol(self, symbol: str) -> float:
+        """종목의 ADR (Average Daily Range) 조회"""
+        try:
+            # 캐시된 가격 데이터에서 ADR 계산
+            if symbol in self.price_data_cache:
+                price_data = self.price_data_cache[symbol]
+                if hasattr(price_data, 'high') and hasattr(price_data, 'low') and hasattr(price_data, 'close'):
+                    if price_data.close > 0:
+                        adr = ((price_data.high - price_data.low) / price_data.close) * 100
+                        return max(adr, 1.0)  # 최소 1%
+
+            # 기본값 반환
+            return 3.0
+
+        except Exception as e:
+            self.logger.error(f"ADR 계산 실패 ({symbol}): {e}")
+            return 3.0
 
     async def _create_candidate_stock(self, signal: TradingSignal, position_size: float) -> Optional[CandidateStock]:
         """후보 종목 생성"""

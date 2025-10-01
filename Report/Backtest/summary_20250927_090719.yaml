@@ -1,0 +1,52 @@
+financial_metrics:
+  error: No daily returns data available
+overview:
+  backtest_period:
+    duration_days: 365
+    end_date: '2024-01-01'
+    start_date: '2023-01-01'
+    trading_days: 0
+  initial_settings:
+    initial_capital: $100,000,000.00
+    max_positions: 10
+    risk_per_trade: 3.0%
+    slippage_assumption: 0.20%
+  report_info:
+    generated_at: '2025-09-27T09:07:19.364071'
+    report_version: '1.0'
+    system_name: AI Assistant Multi-Agent Trading System
+  strategy_description:
+    indicators_used:
+    - RSI
+    - MACD
+    - Bollinger Bands
+    - Volume
+    name: Unified Multi-Agent Strategy
+    rebalancing_frequency: Daily
+    risk_management: Portfolio-based position sizing with stop-loss
+    type: Technical Analysis Based
+  universe:
+    symbol_list:
+    - COOTW
+    - ENA
+    - ITQRU
+    - GRBEQ
+    - ACTDW
+    - CVNSQ
+    - SHI
+    - PHIC
+    - KBNTW
+    - CHKP
+    - ACIC-U
+    - GXII
+    - UTRA
+    - BLNKW
+    - SGHT
+    - FTAAU
+    - COOK
+    - AIIOW
+    - PRPB-U
+    - MFAC-U
+    symbols_traded: 0
+    total_symbols: 15022
+    truncated: true

@@ -17,7 +17,8 @@ import logging
 
 # Import Strategy Layer dependencies
 try:
-    from Project.strategy.position_sizing_service import PositionSizingService
+    from project.core.strategy_integration_service import StrategyIntegrationService
+    from project.service.position_sizing_service import PositionSizingService
     STRATEGY_LAYER_AVAILABLE = True
 except ImportError:
     print("[DailyBacktest] Strategy Layer not available - using fallback")
@@ -51,7 +52,7 @@ class BacktestConfig:
     initial_cash: float = 100.0  # 초기 현금 (억원)
     max_positions: int = 10      # 최대 보유 종목수
     slippage: float = 0.002      # 슬리피지 (0.2%)
-    std_risk: float = 0.05       # 표준 리스크 (5%)
+    std_risk: float = 0.1        # 표준 리스크 (10%) - refer와 동일
     init_risk: float = 0.03      # 초기 손절 리스크 (3%)
     half_sell_threshold: float = 0.20  # 50% 매도 임계값 (20%)
     half_sell_risk_multiplier: float = 2.0  # 50% 매도 후 리스크 배수
@@ -180,7 +181,18 @@ class DailyBacktestService:
 
         # Initialize Strategy Layer connection
         if STRATEGY_LAYER_AVAILABLE:
-            self.position_sizing_service = PositionSizingService()
+            logger.info("Strategy Layer is available - using integrated calculations")
+            # Create config for PositionSizingService compatible with trading system
+            position_config = {
+                'max_position_ratio': 0.10,  # 10% max per position
+                'risk_multiplier': 1.5,
+                'min_order_amount': 1000,
+                'max_daily_risk': 0.05,
+                'enable_volume_check': True,
+                'enable_adr_sizing': True,
+                'enable_stop_loss': True
+            }
+            self.position_sizing_service = PositionSizingService(position_config)
         else:
             self.position_sizing_service = None
             logger.warning("Strategy Layer not available - using fallback calculations")
@@ -279,18 +291,33 @@ class DailyBacktestService:
         Based on TestTradeD.__init__ data preparation logic
         """
         try:
-            # Filter columns (preserved from original)
+            # Filter columns (preserved from original + sophisticated signals)
             filtered_cols = [
                 'open', 'high', 'low', 'close', 'ADR', 'LossCutPrice', 'TargetPrice',
                 'BuySig', 'SellSig', 'signal', 'Type', 'RS_4W', 'Rev_Yoy_Growth',
-                'Eps_Yoy_Growth', 'Sector', 'Industry'
+                'Eps_Yoy_Growth', 'Sector', 'Industry',
+                # 추가: sophisticated signal columns
+                'wBuySig', 'dBuySig', 'rsBuySig', 'fBuySig', 'eBuySig'
             ]
 
             # Apply column filtering
             for ticker in universe:
                 if ticker in df_data and not df_data[ticker].empty:
                     available_cols = [col for col in filtered_cols if col in df_data[ticker].columns]
+
+                    # DEBUG: Check BuySig values before filtering
+                    if 'BuySig' in df_data[ticker].columns:
+                        buysig_sum = df_data[ticker]['BuySig'].sum()
+                        buysig_max = df_data[ticker]['BuySig'].max()
+                        logger.info(f"[DATA_PREP] {ticker}: BuySig sum={buysig_sum}, max={buysig_max} BEFORE filtering")
+
                     df_data[ticker] = df_data[ticker][available_cols]
+
+                    # DEBUG: Check BuySig values after filtering
+                    if 'BuySig' in df_data[ticker].columns:
+                        buysig_sum_after = df_data[ticker]['BuySig'].sum()
+                        buysig_max_after = df_data[ticker]['BuySig'].max()
+                        logger.info(f"[DATA_PREP] {ticker}: BuySig sum={buysig_sum_after}, max={buysig_max_after} AFTER filtering")
 
             # Handle empty data case
             valid_data = {k: v for k, v in df_data.items() if not v.empty}
@@ -301,10 +328,23 @@ class DailyBacktestService:
             # Combine dataframes
             df_combined = pd.concat(valid_data.values(), axis=1, keys=valid_data.keys())
 
+            # DEBUG: Check BuySig values after concat
+            for ticker in ['ZS', 'LKQ', 'ELS']:
+                if ticker in valid_data:
+                    try:
+                        buysig_col = (ticker, 'BuySig')
+                        if buysig_col in df_combined.columns:
+                            buysig_sum = df_combined[buysig_col].sum()
+                            buysig_max = df_combined[buysig_col].max()
+                            logger.info(f"[AFTER_CONCAT] {ticker}: BuySig sum={buysig_sum}, max={buysig_max}")
+                    except Exception as e:
+                        logger.error(f"[AFTER_CONCAT] {ticker}: Error checking BuySig - {e}")
+
             # Create MultiIndex columns (preserved from original logic)
             if not isinstance(df_combined.columns, pd.MultiIndex):
                 fields = ['open', 'high', 'low', 'close', 'ADR', 'LossCutPrice', 'TargetPrice',
-                         'BuySig', 'SellSig', 'signal', 'RS_4W', 'Rev_Yoy_Growth', 'Eps_Yoy_Growth', 'Type']
+                         'BuySig', 'SellSig', 'signal', 'RS_4W', 'Rev_Yoy_Growth', 'Eps_Yoy_Growth', 'Type',
+                         'wBuySig', 'dBuySig', 'rsBuySig', 'fBuySig', 'eBuySig']
 
                 # Length check with warning instead of error
                 expected = len(universe) * len(fields)
@@ -318,12 +358,25 @@ class DailyBacktestService:
                         [universe, fields],
                         names=['Ticker', 'Field']
                     )
-                except ValueError:
+                    logger.info(f"[MULTIINDEX] Created MultiIndex with {len(universe)} tickers and {len(fields)} fields")
+                except ValueError as e:
                     # Fallback: use available data structure
-                    logger.warning("Using fallback column structure")
+                    logger.warning(f"Using fallback column structure due to error: {e}")
                     df_combined.columns.names = ['Ticker', 'Field']
             else:
                 df_combined.columns.names = ['Ticker', 'Field']
+
+            # DEBUG: Check BuySig values after MultiIndex creation
+            for ticker in ['ZS', 'LKQ', 'ELS']:
+                if ticker in universe:
+                    try:
+                        buysig_col = (ticker, 'BuySig')
+                        if buysig_col in df_combined.columns:
+                            buysig_sum = df_combined[buysig_col].sum()
+                            buysig_max = df_combined[buysig_col].max()
+                            logger.info(f"[AFTER_MULTIINDEX] {ticker}: BuySig sum={buysig_sum}, max={buysig_max}")
+                    except Exception as e:
+                        logger.error(f"[AFTER_MULTIINDEX] {ticker}: Error checking BuySig - {e}")
 
             return df_combined
 
@@ -339,12 +392,27 @@ class DailyBacktestService:
         data = {}
         try:
             date_data = df.iloc[index]
+
             for ticker in df.columns.levels[0]:
                 ticker_data = {}
                 for field in df.columns.levels[1]:
                     if (ticker, field) in date_data.index:
                         value = date_data[(ticker, field)]
-                        ticker_data[field] = float(value) if pd.notna(value) else 0.0
+
+                        # DEBUG: Log only BuySig signals when found
+                        if field == 'BuySig' and value > 0:
+                            date_index = df.index[index] if index < len(df.index) else "Unknown"
+                            logger.info(f"[EXTRACT] {ticker} BuySig={value} found on {date_index}")
+
+                        # 문자열 필드는 그대로 보존, 숫자 필드만 float 변환
+                        if field in ['Sector', 'Industry', 'Type']:
+                            ticker_data[field] = value if pd.notna(value) else ''
+                        else:
+                            try:
+                                ticker_data[field] = float(value) if pd.notna(value) else 0.0
+                            except (ValueError, TypeError):
+                                ticker_data[field] = 0.0
+
                 data[ticker] = ticker_data
         except Exception as e:
             logger.error(f"Error extracting market data: {e}")
@@ -464,19 +532,23 @@ class DailyBacktestService:
     def _execute_sell_trade(self, ticker: str, position: Position, sell_price: float,
                           gain: float, date: pd.Timestamp, reason: SellReason,
                           portfolio: Portfolio) -> Trade:
-        """Execute a complete sell trade"""
-        final_again = position.again * (1 + gain)
-        return_cash = position.balance * final_again
+        """Execute a complete sell trade (refer Strategy_M.sell_stock 로직)"""
+        # refer과 동일한 매도 로직
+        asset_a_gain_new = position.again * (1 + gain)
 
-        # Update portfolio metrics (preserved from original sell_stock logic)
+        # refer 로직: cash_new += asset_balance_old * (1 + Gain) * (1 - Slippage)
+        return_cash = round(float(position.balance * (1 + gain) * (1 - self.config.slippage)), 3)
+
+        # Update portfolio
         portfolio.cash += return_cash
 
-        if final_again >= 1.0:
-            portfolio.win_count += 1
-            portfolio.win_gain += final_again - 1
-        else:
+        # refer과 동일한 승패 판정 로직 (슬리피지 적용)
+        if asset_a_gain_new * (1 - self.config.slippage) <= 1:
             portfolio.loss_count += 1
-            portfolio.loss_gain += 1 - final_again
+            portfolio.loss_gain += abs(asset_a_gain_new - 1)
+        elif asset_a_gain_new * (1 - self.config.slippage) > 1:
+            portfolio.win_count += 1
+            portfolio.win_gain += abs(asset_a_gain_new - 1)
 
         trade = Trade(
             ticker=ticker,
@@ -539,36 +611,44 @@ class DailyBacktestService:
 
     def _update_holding_position(self, ticker: str, position: Position,
                                current_price: float, previous_close: float):
-        """Update position for holding stocks (preserved from remain_stock logic)"""
+        """Update position for holding stocks (refer remain_stock 로직)"""
+        # refer Strategy_M.remain_stock과 동일한 업데이트 로직
         if previous_close > 0:
             daily_gain = (current_price - previous_close) / previous_close
+            # refer: asset_a_gain_old * (1 + daily_gain)
             position.again *= (1 + daily_gain)
+            # refer: asset_balance_old * (1 + daily_gain)
+            position.balance *= (1 + daily_gain)
 
         position.duration += 1
 
-        # Update loss cut price based on trailing stop (simplified version)
-        if hasattr(self.position_sizing_service, 'calculate_losscut_price'):
-            try:
-                losscut_result = self.position_sizing_service.calculate_losscut_price(
-                    position.again, position.losscut_price, position.avg_price, position.risk
-                )
-                position.losscut_price = losscut_result.get('new_losscut_price', position.losscut_price)
-            except Exception:
-                # Fallback: simple trailing stop
-                if position.again > 1.1:  # 10% profit
-                    min_losscut = position.avg_price * (1 + (position.again - 1) * 0.5)
-                    position.losscut_price = max(position.losscut_price, min_losscut)
+        # refer CalcLossCutPrice를 사용한 손절가 업데이트
+        position.losscut_price = self._calculate_refer_losscut_price(
+            position.again, position.losscut_price, position.avg_price, position.risk
+        )
 
     def _identify_buy_candidates(self, valid_stocks: List[str], market_data: Dict[str, Dict]) -> List[str]:
         """Identify buy candidates based on signals"""
         candidates = []
+
+        logger.info(f"[BUY_CANDIDATES] 검사 대상: {len(valid_stocks)}개 종목")
+
         for ticker in valid_stocks:
             buy_signal = market_data[ticker].get('BuySig', 0)
             signal = market_data[ticker].get('signal', 0)
 
-            if buy_signal == 1 or signal == 1:
-                candidates.append(ticker)
+            # DEBUG: Log only when signals are found
+            if buy_signal > 0 or signal > 0:
+                logger.info(f"[BUY_DEBUG] {ticker}: BuySig={buy_signal}, signal={signal} -> SIGNAL FOUND!")
 
+            # 매수 신호 검사: BuySig >= 1 또는 signal >= 1 (sophisticated signal 지원)
+            if buy_signal >= 1 or signal >= 1:
+                candidates.append(ticker)
+                logger.info(f"[BUY_CANDIDATES] ✓ {ticker}: BuySig={buy_signal}, signal={signal} -> 매수 후보 추가")
+            else:
+                logger.info(f"[BUY_CANDIDATES] ✗ {ticker}: BuySig={buy_signal}, signal={signal} -> 신호 없음")
+
+        logger.info(f"[BUY_CANDIDATES] 총 매수 후보: {len(candidates)}개 ({candidates})")
         return candidates
 
     def _execute_buy_orders(self, candidates: List[str], portfolio: Portfolio,
@@ -577,23 +657,36 @@ class DailyBacktestService:
         trades = []
         available_slots = self.config.max_positions - portfolio.position_count
 
-        if available_slots <= 0 or not candidates:
+        logger.info(f"[BUY_ORDERS] 사용 가능 슬롯: {available_slots}, 매수 후보: {len(candidates)}개")
+
+        if available_slots <= 0:
+            logger.info(f"[BUY_ORDERS] 매수 불가: 포지션 만료 (현재: {portfolio.position_count}/{self.config.max_positions})")
+            return trades
+
+        if not candidates:
+            logger.info(f"[BUY_ORDERS] 매수 불가: 매수 후보 없음")
             return trades
 
         # Process candidates (simplified version of original complex logic)
         for ticker in candidates[:available_slots]:
             if ticker in portfolio.positions:
-                continue  # Already holding
+                logger.info(f"[BUY_ORDERS] {ticker}: 이미 보유 중 -> 스킵")
+                continue
 
+            logger.info(f"[BUY_ORDERS] {ticker}: 매수 주문 실행 시도")
             trade = self._execute_buy_trade(ticker, portfolio, market_data[ticker], date)
             if trade:
                 trades.append(trade)
+                logger.info(f"[BUY_ORDERS] ✓ {ticker}: 매수 성공 (가격: {trade.price}, 수량: {trade.quantity})")
+            else:
+                logger.warning(f"[BUY_ORDERS] ✗ {ticker}: 매수 실패")
 
+        logger.info(f"[BUY_ORDERS] 총 매수 체결: {len(trades)}건")
         return trades
 
     def _execute_buy_trade(self, ticker: str, portfolio: Portfolio,
                          ticker_data: Dict[str, float], date: pd.Timestamp) -> Optional[Trade]:
-        """Execute a buy trade"""
+        """Execute a buy trade (refer Strategy_M.buy_stock compatible)"""
         try:
             target_price = ticker_data.get('TargetPrice', 0)
             open_price = ticker_data.get('open', 0)
@@ -616,42 +709,56 @@ class DailyBacktestService:
             # Apply slippage
             entry_price *= (1 + self.config.slippage)
 
-            # Calculate position size (simplified version)
+            # refer Strategy_M.buy_stock 로직 그대로 구현
+            # 1. 포지션 크기 계산 (총 잔액 대비)
             position_ratio = self._calculate_position_ratio(adr)
-            investment_amount = portfolio.total_value * position_ratio
+            input_cash = portfolio.total_value * position_ratio
 
-            # Check if we have enough cash
-            if investment_amount > portfolio.cash:
-                investment_amount = portfolio.cash * 0.9  # Use 90% of available cash
+            # 2. refer과 동일한 현금 처리 로직
+            if portfolio.cash > input_cash:
+                input_size = input_cash
+                portfolio.cash -= round(input_size, 3)
+            else:
+                input_size = portfolio.cash
+                portfolio.cash = 0.0
 
-            if investment_amount < portfolio.total_value * 0.01:  # Minimum 1%
+            if input_size < portfolio.total_value * 0.01:  # Minimum 1%
                 return None
 
-            # Calculate loss cut price
-            losscut_price = entry_price * (1 - self.config.init_risk)
-
-            # Check for whipsaw condition (preserved from original)
+            # 3. 첫 날 수익률 계산 (refer와 동일)
             daily_gain = (close_price - entry_price) / entry_price if entry_price > 0 else 0
+
+            # 4. refer과 동일한 Again 계산
+            asset_a_gain_new = 1 + daily_gain
+
+            # 5. refer과 동일한 자산 밸런스 계산
+            asset_balance_new = round(float(input_size * asset_a_gain_new), 3)
+
+            # 6. 손절가 계산 (refer CalcLossCutPrice 로직)
+            losscut_price = self._calculate_refer_losscut_price(
+                asset_a_gain_new, entry_price, entry_price, self.config.std_risk
+            )
+
+            # 7. Whipsaw 조건 체크 (refer와 동일)
             low_gain = (low_price - entry_price) / entry_price if entry_price > 0 else 0
             cut_gain = (losscut_price - entry_price) / entry_price if entry_price > 0 else 0
 
             if self.config.enable_whipsaw and low_gain < cut_gain:
                 # Whipsaw condition - immediate loss cut
-                return self._execute_whipsaw_trade(ticker, entry_price, daily_gain, date, portfolio, investment_amount)
+                return self._execute_whipsaw_trade(ticker, entry_price, daily_gain, date, portfolio, input_size)
 
-            # Normal buy execution
+            # 8. refer과 동일한 포지션 생성
             position = Position(
                 ticker=ticker,
-                balance=investment_amount,
+                balance=asset_balance_new,  # refer 로직: InputSize * AGain
                 avg_price=entry_price,
-                again=1 + daily_gain,
+                again=asset_a_gain_new,     # refer 로직: 1 + Gain
                 duration=1,
                 losscut_price=losscut_price,
                 risk=self.config.std_risk
             )
 
             portfolio.positions[ticker] = position
-            portfolio.cash -= investment_amount
 
             trade = Trade(
                 ticker=ticker,
@@ -700,16 +807,37 @@ class DailyBacktestService:
         return trade
 
     def _calculate_position_ratio(self, adr: float) -> float:
-        """Calculate position ratio based on ADR (simplified version)"""
-        base_ratio = 0.2  # 20% default
+        """Calculate position ratio based on ADR (refer CalcPosSizing 로직)"""
+        std_inp_size = 0.2  # refer와 동일한 20% 기본값
 
-        # Adjust based on volatility (ADR)
+        # refer Strategy_M.CalcPosSizing과 동일한 로직
         if adr >= 5:
-            return base_ratio / 2  # Reduce for high volatility
-        elif adr <= 2:
-            return base_ratio * 1.5  # Increase for low volatility
+            return std_inp_size / 2  # 변동성이 클 때 절반으로
         else:
-            return base_ratio
+            return std_inp_size
+
+    def _calculate_refer_losscut_price(self, again: float, losscut_old: float, avg_price: float, risk: float) -> float:
+        """refer Strategy_M.CalcLossCutPrice 로직 구현"""
+        # refer와 동일한 손절가 계산 로직
+        if again < (1 + self.config.std_risk):  # < 1.05 : 0.95
+            cut_line = (1 - self.config.std_risk)
+            losscut_new = avg_price * cut_line
+        else:  # > 1.05 : 1.11 #
+            cut_line = 1 - ((round((again - 1) / risk, 0) - 1) * risk)
+            losscut_new = avg_price * cut_line
+
+        # refer의 min_loss_cut_percentage 적용 (3%)
+        min_cut_line = 1 - 0.03  # refer의 기본 min_loss_cut_percentage
+        min_loss_cut_price = avg_price * min_cut_line
+
+        # 최소 손절가 보장
+        if losscut_new < min_loss_cut_price:
+            losscut_new = min_loss_cut_price
+
+        if losscut_new > losscut_old:
+            return losscut_new
+        else:
+            return losscut_old
 
     def _copy_portfolio(self, portfolio: Portfolio) -> Portfolio:
         """Create a deep copy of portfolio for history"""
@@ -742,7 +870,9 @@ class DailyBacktestService:
         balance_str = f"{self.COLOR}{portfolio.total_value:.2f}{self.RESET}"
         cash_ratio_str = f"{self.COLOR3}{portfolio.cash_ratio:.2f}{self.RESET}"
 
-        print(f"{date.strftime('%Y-%m-%d')} - Trades: {len(day_result.trades)}, "
+        # numpy.datetime64를 pandas.Timestamp로 변환
+        date_str = pd.Timestamp(date).strftime('%Y-%m-%d')
+        print(f"{date_str} - Trades: {len(day_result.trades)}, "
               f"W/L Ratio: {self.CODE}{win_loss_ratio:.2f}{self.RESET}, "
               f"W/L Gain: {self.NAME}{win_loss_gain:.2f}{self.RESET}, "
               f"Positions: {portfolio.position_count}/{self.config.max_positions}, "
@@ -825,7 +955,7 @@ def load_backtest_config(config_path: str = None) -> BacktestConfig:
 def create_sample_data(universe: List[str], days: int = 100) -> Dict[str, pd.DataFrame]:
     """Create sample data for testing purposes"""
     data = {}
-    dates = pd.date_range(start='2023-01-01', periods=days, freq='D')
+    dates = pd.date_range(start='2022-01-01', periods=days, freq='D')
 
     for ticker in universe:
         np.random.seed(hash(ticker) % 2**32)  # Reproducible but different for each ticker

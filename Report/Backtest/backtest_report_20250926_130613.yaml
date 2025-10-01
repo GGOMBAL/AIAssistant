@@ -1,0 +1,107 @@
+daily_performance: []
+drawdown_analysis: {}
+financial_metrics:
+  error: No daily returns data available
+overview:
+  backtest_period:
+    duration_days: 30
+    end_date: '2023-01-31'
+    start_date: '2023-01-01'
+    trading_days: 0
+  initial_settings:
+    initial_capital: $100,000,000.00
+    max_positions: 10
+    risk_per_trade: 3.0%
+    slippage_assumption: 0.20%
+  report_info:
+    generated_at: '2025-09-26T13:06:13.423950'
+    report_version: '1.0'
+    system_name: AI Assistant Multi-Agent Trading System
+  strategy_description:
+    indicators_used:
+    - RSI
+    - MACD
+    - Bollinger Bands
+    - Volume
+    name: Unified Multi-Agent Strategy
+    rebalancing_frequency: Daily
+    risk_management: Portfolio-based position sizing with stop-loss
+    type: Technical Analysis Based
+  universe:
+    symbol_list:
+    - NRG
+    - PDX
+    - INCR
+    - SURW
+    - ANSS
+    - AGM-A
+    - SGN
+    - LFL
+    - ORIT
+    - GATE
+    - NVR
+    - EFC-P-D
+    - UCBI
+    - EPD
+    - CRBD
+    - EFD
+    - HOOD
+    - SKBI
+    - ARM
+    - TRV
+    symbols_traded: 0
+    total_symbols: 15016
+    truncated: true
+performance_summary: {}
+raw_results:
+  average_return: !!python/object/apply:numpy._core.multiarray.scalar
+  - &id001 !!python/object/apply:numpy.dtype
+    args:
+    - f8
+    - false
+    - true
+    state: !!python/tuple
+    - 3
+    - <
+    - null
+    - null
+    - null
+    - -1
+    - -1
+    - 0
+  - !!binary |
+    +SDep6B1IUA=
+  best_performer: !!python/tuple
+  - AGM-A
+  - 22.400346620450616
+  failed_loads: 4
+  final_value: !!python/object/apply:numpy._core.multiarray.scalar
+  - *id001
+  - !!binary |
+    IMT7FLQuW0A=
+  individual_returns:
+    AGM-A: 22.400346620450616
+    ANSS: 11.615822996982915
+    GATE: 0.19960079840318934
+    INCR: 3.6619718309859253
+    NRG: 7.1719386157218885
+    PDX: 7.328767123287673
+  initial_cash: 100.0
+  losing_trades: 0
+  max_drawdown: 0
+  period: 2023-01-01 ~ 2023-01-31
+  simulation_mode: true
+  successful_loads: 6
+  total_return: !!python/object/apply:numpy._core.multiarray.scalar
+  - *id001
+  - !!binary |
+    +SDep6B1IUA=
+  total_symbols_tested: 10
+  total_trades: 6
+  win_rate: 100.0
+  winning_trades: 6
+  worst_performer: !!python/tuple
+  - GATE
+  - 0.19960079840318934
+symbol_performance: {}
+trade_history: []

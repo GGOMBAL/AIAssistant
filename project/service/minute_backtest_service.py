@@ -24,7 +24,8 @@ from .daily_backtest_service import (
 
 # Import Strategy Layer dependencies
 try:
-    from Project.strategy.position_sizing_service import PositionSizingService
+    from project.core.strategy_integration_service import StrategyIntegrationService
+    from project.service.position_sizing_service import PositionSizingService
     STRATEGY_LAYER_AVAILABLE = True
 except ImportError:
     print("[MinuteBacktest] Strategy Layer not available - using fallback")
@@ -95,7 +96,18 @@ class MinuteBacktestService:
 
         # Initialize Strategy Layer connection
         if STRATEGY_LAYER_AVAILABLE:
-            self.position_sizing_service = PositionSizingService()
+            logger.info("Strategy Layer is available - using integrated calculations")
+            # Create config for PositionSizingService compatible with trading system
+            position_config = {
+                'max_position_ratio': 0.10,  # 10% max per position
+                'risk_multiplier': 1.5,
+                'min_order_amount': 1000,
+                'max_daily_risk': 0.05,
+                'enable_volume_check': True,
+                'enable_adr_sizing': True,
+                'enable_stop_loss': True
+            }
+            self.position_sizing_service = PositionSizingService(position_config)
         else:
             self.position_sizing_service = None
             logger.warning("Strategy Layer not available - using fallback calculations")

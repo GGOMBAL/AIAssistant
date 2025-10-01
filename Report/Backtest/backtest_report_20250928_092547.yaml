@@ -1,0 +1,98 @@
+daily_performance: []
+drawdown_analysis: {}
+financial_metrics:
+  error: No daily returns data available
+overview:
+  backtest_period:
+    duration_days: 365
+    end_date: '2024-01-01'
+    start_date: '2023-01-01'
+    trading_days: 0
+  initial_settings:
+    initial_capital: $100,000,000.00
+    max_positions: 10
+    risk_per_trade: 3.0%
+    slippage_assumption: 0.20%
+  report_info:
+    generated_at: '2025-09-28T09:25:47.289424'
+    report_version: '1.0'
+    system_name: AI Assistant Multi-Agent Trading System
+  strategy_description:
+    indicators_used:
+    - RSI
+    - MACD
+    - Bollinger Bands
+    - Volume
+    name: Unified Multi-Agent Strategy
+    rebalancing_frequency: Daily
+    risk_management: Portfolio-based position sizing with stop-loss
+    type: Technical Analysis Based
+  universe:
+    symbol_list:
+    - ECC-P-D
+    - ATOM
+    - MEOA
+    - IGICW
+    - AEI
+    - CARD
+    - UWMC-WS
+    - PGR
+    - CCIXU
+    - FICO
+    - CHTT
+    - USB-P-P
+    - SEATW
+    - QOMO
+    - WEB
+    - NMRA
+    - DRNA
+    - PSTH
+    - DBRG
+    - VPCB
+    symbols_traded: 0
+    total_symbols: 15023
+    truncated: true
+performance_summary: {}
+raw_results:
+  avg_cash_ratio: !!python/object/apply:numpy._core.multiarray.scalar
+  - &id001 !!python/object/apply:numpy.dtype
+    args:
+    - f8
+    - false
+    - true
+    state: !!python/tuple
+    - 3
+    - <
+    - null
+    - null
+    - null
+    - -1
+    - -1
+    - 0
+  - !!binary |
+    vH+KefvJMkA=
+  execution_time: 301.889331
+  failed_loads: 6495
+  final_value: 47.123954031570186
+  half_sell_trades: 0
+  initial_cash: 100.0
+  losing_trades: 76
+  losscut_trades: 48
+  max_drawdown: !!python/object/apply:numpy._core.multiarray.scalar
+  - *id001
+  - !!binary |
+    4667DOfG4b8=
+  max_positions_used: 7
+  method: Sophisticated Trading Engine
+  period: 2023-01-01 ~ 2024-01-01
+  signal_sell_trades: 68
+  simulation_mode: false
+  sophisticated_engine: true
+  successful_loads: 8528
+  total_return: -0.5287604596842982
+  total_symbols_tested: 15023
+  total_trades: 441
+  win_rate: 0.1488
+  winning_trades: 40
+symbol_performance: {}
+trade_history: []

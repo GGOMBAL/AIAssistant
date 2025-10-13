@@ -563,11 +563,11 @@ async def run_backtest_staged(
         print(f"\n[실행 정보]")
         print(f"  실행 시간: {backtest_results.execution_time:.2f}초")
 
-        # 4. 개별 티커의 시그널 타임라인 출력 (최근 100개 날짜)
-        print("\n" + "="*80)
-        print("개별 티커 시그널 타임라인 (최근 100개 거래일)")
-        print("="*80)
-        _print_ticker_signal_timeline(final_candidates_data, symbols_with_d_data[:3])
+        # 4. 개별 티커의 시그널 타임라인 출력 (비활성화)
+        # print("\n" + "="*80)
+        # print("개별 티커 시그널 타임라인 (최근 100개 거래일)")
+        # print("="*80)
+        # _print_ticker_signal_timeline(final_candidates_data, symbols_with_d_data[:3])
 
         return {
             'status': 'completed',

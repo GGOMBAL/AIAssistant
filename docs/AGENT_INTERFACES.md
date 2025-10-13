@@ -1,12 +1,29 @@
 # Agent Interface Standardization
 
-**Version**: 2.0
-**Last Updated**: 2025-09-26
+**Version**: 2.1
+**Last Updated**: 2025-10-06
 **Managed by**: Orchestrator Agent
+
+**Related Documentation**:
+- [Interface Specification](INTERFACE_SPECIFICATION.md) - Data structure interfaces between layers
+- [Data Layer Interfaces](DATA_LAYER_INTERFACES.md) - Column specifications for data layers
+- [CLAUDE.md](../CLAUDE.md) - Project rules and standards
+- [Database Architecture](architecture/DATABASE_ARCHITECTURE.md) - MongoDB data structures
 
 ## 개요
 
-본 문서는 멀티 에이전트 시스템 내에서 에이전트 간 표준화된 통신 인터페이스를 정의합니다. 모든 에이전트는 이 인터페이스를 통해서만 상호작용하며, 시스템의 일관성과 확장성을 보장합니다.
+본 문서는 멀티 에이전트 시스템 내에서 에이전트 간 표준화된 **통신 프로토콜**을 정의합니다. 모든 에이전트는 이 인터페이스를 통해서만 상호작용하며, 시스템의 일관성과 확장성을 보장합니다.
+
+### 관련 문서와의 연계
+
+이 문서는 **에이전트 간 통신(RPC, 메시지 전달)**을 정의하며, [INTERFACE_SPECIFICATION.md](INTERFACE_SPECIFICATION.md)는 **데이터 구조(DataFrame, Dict 형식)**를 정의합니다.
+
+```
+[Data Agent] ──(AGENT_INTERFACES.md)──→ [Strategy Agent]
+      ↓                                        ↓
+  df_D, df_W, df_RS              BuySig, SellSig, TargetPrice
+  (INTERFACE_SPECIFICATION.md)   (INTERFACE_SPECIFICATION.md)
+```
 
 ## 표준 통신 프로토콜
 
@@ -84,6 +101,31 @@ class OrchestratorInterface:
 
     async def get_real_time_portfolio() -> Dict[str, Any]:
         """실시간 포트폴리오 조회"""
+        pass
+
+    async def show_ticker_signal_timeline(
+        config: dict
+    ) -> None:
+        """개별 티커 시그널 타임라인 표시
+
+        사용자 입력을 받아 특정 종목들의 W/D/RS/E/F 시그널을
+        타임라인 형태로 표시합니다.
+
+        Args:
+            config: 시스템 설정 딕셔너리
+
+        User Input:
+            - symbols: 종목 코드 (쉼표로 구분, 예: AAPL,MSFT,GOOGL)
+            - period: 분석 기간 (1=3개월, 2=6개월, 3=1년, 4=2년)
+
+        Process:
+            1. 사용자로부터 종목 코드 및 분석 기간 입력
+            2. StagedPipelineService를 통해 데이터 로딩 및 시그널 생성
+            3. 최근 100개 거래일의 시그널 타임라인 출력
+
+        Output:
+            각 종목별로 날짜/종가/W/D/RS/E/F 시그널을 테이블 형태로 표시
+        """
         pass
 ```
 

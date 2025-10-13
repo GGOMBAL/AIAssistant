@@ -1,55 +1,140 @@
 # AI Assistant Documentation System
 
-**Version**: 2.0
-**Last Updated**: 2025-09-26
+**Version**: 2.1
+**Last Updated**: 2025-10-06
 **Managed by**: Orchestrator Agent
 
-## 문서 계층 구조
+---
+
+## 📚 Documentation Index
+
+This directory contains all technical documentation for the AI Assistant Multi-Agent Trading System.
+
+### 🔗 Key Documents
+
+#### **Interface Documentation** (핵심 인터페이스 문서)
+1. **[INTERFACE_SPECIFICATION.md](INTERFACE_SPECIFICATION.md)** - 레이어 간 데이터 인터페이스
+   - Indicator Layer → Strategy Layer 데이터 형식
+   - Strategy Layer 출력 형식 (df_dump, Universe)
+   - 표준 데이터 타입 및 검증 규칙
+
+2. **[DATA_LAYER_INTERFACES.md](DATA_LAYER_INTERFACES.md)** - 데이터 레이어 간 컬럼 표준
+   - Market DB → Indicator Layer 컬럼 스펙 (before_TRD.json)
+   - Indicator Layer → Strategy Layer 컬럼 스펙 (after_TRD.json)
+   - df_D, df_W, df_RS, df_E, df_F 각 데이터의 컬럼 명세
+   - Indicator Layer에서 추가되는 계산 컬럼 정의
+
+3. **[AGENT_INTERFACES.md](AGENT_INTERFACES.md)** - 에이전트 간 통신 프로토콜
+   - 메시지 구조 (Request/Response)
+   - RPC 및 이벤트 기반 통신
+   - 오류 처리 및 재시도 로직
+
+4. **[REQUEST_TYPE_SYSTEM.md](REQUEST_TYPE_SYSTEM.md)** - Request Type 분류 시스템
+   - EXECUTION vs CODE_MODIFICATION 요청 구분
+   - Layer Architecture 기반 코드 수정
+   - Agent별 프롬프트 생성 전략
+
+5. **[SIGNAL_TIMELINE_FEATURE.md](SIGNAL_TIMELINE_FEATURE.md)** - Signal Timeline 기능 (신규)
+   - 개별 티커 W/D/RS/E/F 시그널 타임라인 표시
+   - 사용자 인터랙티브 종목/기간 선택
+   - Staged Pipeline 통합 및 데이터 구조 변환
+   - 타임라인 시각화 출력
+
+**연계 관계**:
+```
+AGENT_INTERFACES.md     ←→  INTERFACE_SPECIFICATION.md  ←→  DATA_LAYER_INTERFACES.md
+(통신 프로토콜)              (데이터 구조)                   (컬럼 스펙)
+     ↓                           ↓                              ↓
+에이전트 간 메시지         레이어 간 데이터 교환           Market DB → Indicator → Strategy
+RPC 스타일 호출          DataFrame/Dict 형식            컬럼명 및 타입 정의
+```
+
+#### **Architecture & System** (아키텍처 & 시스템)
+5. **[architecture/ARCHITECTURE_OVERVIEW.md](architecture/ARCHITECTURE_OVERVIEW.md)** - 시스템 아키텍처
+6. **[architecture/DATABASE_ARCHITECTURE.md](architecture/DATABASE_ARCHITECTURE.md)** - MongoDB 구조
+7. **[HELPER_FUNCTIONS_MANUAL.md](HELPER_FUNCTIONS_MANUAL.md)** - Helper 유틸리티
+
+**전체 아키텍처 문서**: [architecture/](architecture/) 폴더 참조
+
+---
+
+## 🎯 빠른 네비게이션
+
+### 작업별 참조 문서
+
+| 하고 싶은 작업 | 참조 문서 |
+|-------------|---------|
+| 시스템 이해 | [architecture/ARCHITECTURE_OVERVIEW.md](architecture/ARCHITECTURE_OVERVIEW.md) → [CLAUDE.md](../CLAUDE.md) |
+| 새 에이전트 구현 | [AGENT_INTERFACES.md](AGENT_INTERFACES.md) → [INTERFACE_SPECIFICATION.md](INTERFACE_SPECIFICATION.md) |
+| 데이터 작업 | [DATA_LAYER_INTERFACES.md](DATA_LAYER_INTERFACES.md) → [INTERFACE_SPECIFICATION.md](INTERFACE_SPECIFICATION.md) → [architecture/DATABASE_ARCHITECTURE.md](architecture/DATABASE_ARCHITECTURE.md) |
+| Indicator Layer 개발 | [DATA_LAYER_INTERFACES.md](DATA_LAYER_INTERFACES.md) → `refer/debug_json/*_before_TRD.json` |
+| Strategy Layer 개발 | [DATA_LAYER_INTERFACES.md](DATA_LAYER_INTERFACES.md) → `refer/debug_json/*_after_TRD.json` |
+| 코드 수정 요청 이해 | [REQUEST_TYPE_SYSTEM.md](REQUEST_TYPE_SYSTEM.md) → [INTERFACE_SPECIFICATION.md](INTERFACE_SPECIFICATION.md) |
+| 시스템 디버깅 | [AGENT_INTERFACES.md](AGENT_INTERFACES.md) → [architecture/ARCHITECTURE_OVERVIEW.md](architecture/ARCHITECTURE_OVERVIEW.md) |
+| 시그널 타임라인 사용 | [SIGNAL_TIMELINE_FEATURE.md](SIGNAL_TIMELINE_FEATURE.md) → [AGENT_INTERFACES.md](AGENT_INTERFACES.md) |
+
+---
+
+## 📋 문서 계층 구조
 
 본 문서 시스템은 계층적으로 구성되어 있으며, 각 에이전트가 담당하는 영역의 문서를 관리합니다.
 
 ```
 docs/
-├── README.md                    # 문서 시스템 개요 (이 파일)
-├── ARCHITECTURE.md              # 시스템 전체 아키텍처
-├── AGENT_INTERFACES.md          # 에이전트 간 인터페이스 표준
-├── FILE_PERMISSIONS.md          # 파일 접근 권한 매트릭스
+├── README.md                         # 문서 시스템 개요 (이 파일)
+├── AGENT_INTERFACES.md               # 에이전트 간 통신 프로토콜
+├── INTERFACE_SPECIFICATION.md        # 레이어 간 데이터 인터페이스
+├── DATA_LAYER_INTERFACES.md          # 데이터 레이어 간 컬럼 표준 (신규)
+├── FILE_PERMISSIONS.md               # 파일 접근 권한 매트릭스
+├── HELPER_FUNCTIONS_MANUAL.md        # Helper 유틸리티 함수
 │
-├── orchestrator/                # Orchestrator Agent 문서
-│   ├── README.md                # 오케스트레이터 개요
-│   ├── CORE_COMPONENTS.md       # 핵심 컴포넌트 문서
-│   ├── REAL_TIME_TRADING.md     # 실시간 거래 시스템
-│   └── SYSTEM_MONITORING.md     # 시스템 모니터링
+├── architecture/                     # 시스템 아키텍처 문서
+│   ├── ARCHITECTURE_OVERVIEW.md      # 시스템 아키텍처 개요
+│   ├── ARCHITECTURE.md               # 전체 시스템 아키텍처
+│   ├── ARCHITECTURE_GUIDE.md         # 아키텍처 가이드
+│   ├── DATABASE_ARCHITECTURE.md      # MongoDB 구조
+│   ├── MULTI_AGENT_SYSTEM_ARCHITECTURE.md    # 멀티 에이전트 시스템
+│   ├── UNIFIED_SYSTEM_ARCHITECTURE.md        # 통합 시스템 아키텍처
+│   ├── DATA_AGENT_ARCHITECTURE.md            # Data Agent 아키텍처
+│   ├── STRATEGY_AGENT_ARCHITECTURE.md        # Strategy Agent 아키텍처
+│   ├── HELPER_AGENT_ARCHITECTURE.md          # Helper Agent 아키텍처
+│   └── SERVICE_LAYER_BACKTEST_ARCHITECTURE.md # 백테스트 아키텍처
 │
-├── data_agent/                  # Data Agent 문서
-│   ├── README.md                # 데이터 에이전트 개요
-│   ├── DATA_SOURCES.md          # 데이터 소스 관리
-│   ├── TECHNICAL_INDICATORS.md  # 기술지표 계산
-│   └── DATABASE_SCHEMA.md       # 데이터베이스 스키마
+├── orchestrator/                     # Orchestrator Agent 문서
+│   ├── README.md                     # 오케스트레이터 개요
+│   ├── CORE_COMPONENTS.md            # 핵심 컴포넌트 문서
+│   ├── REAL_TIME_TRADING.md          # 실시간 거래 시스템
+│   └── SYSTEM_MONITORING.md          # 시스템 모니터링
 │
-├── strategy_agent/              # Strategy Agent 문서
-│   ├── README.md                # 전략 에이전트 개요
-│   ├── TRADING_STRATEGIES.md    # 매매 전략 목록
-│   ├── SIGNAL_GENERATION.md     # 신호 생성 로직
-│   └── BACKTESTING.md           # 백테스트 프레임워크
+├── data_agent/                       # Data Agent 문서
+│   ├── README.md                     # 데이터 에이전트 개요
+│   ├── DATA_SOURCES.md               # 데이터 소스 관리
+│   ├── TECHNICAL_INDICATORS.md       # 기술지표 계산
+│   └── DATABASE_SCHEMA.md            # 데이터베이스 스키마
 │
-├── service_agent/               # Service Agent 문서
-│   ├── README.md                # 서비스 에이전트 개요
-│   ├── EXECUTION_SERVICES.md    # 실행 서비스
-│   ├── PERFORMANCE_ANALYSIS.md  # 성과 분석
-│   └── DATABASE_OPERATIONS.md   # 데이터베이스 운영
+├── strategy_agent/                   # Strategy Agent 문서
+│   ├── README.md                     # 전략 에이전트 개요
+│   ├── TRADING_STRATEGIES.md         # 매매 전략 목록
+│   ├── SIGNAL_GENERATION.md          # 신호 생성 로직
+│   └── BACKTESTING.md                # 백테스트 프레임워크
 │
-├── helper_agent/                # Helper Agent 문서
-│   ├── README.md                # 헬퍼 에이전트 개요
-│   ├── BROKER_APIS.md           # 브로커 API 연동
-│   ├── EXTERNAL_APIS.md         # 외부 API 연동
-│   └── NOTIFICATION_SYSTEM.md   # 알림 시스템
+├── service_agent/                    # Service Agent 문서
+│   ├── README.md                     # 서비스 에이전트 개요
+│   ├── EXECUTION_SERVICES.md         # 실행 서비스
+│   ├── PERFORMANCE_ANALYSIS.md       # 성과 분석
+│   └── DATABASE_OPERATIONS.md        # 데이터베이스 운영
 │
-└── deployment/                  # 배포 및 운영 문서
-    ├── SETUP_GUIDE.md           # 초기 설정 가이드
-    ├── CONFIGURATION.md         # 설정 파일 가이드
-    ├── TROUBLESHOOTING.md       # 문제 해결 가이드
-    └── MAINTENANCE.md           # 유지보수 가이드
+├── helper_agent/                     # Helper Agent 문서
+│   ├── README.md                     # 헬퍼 에이전트 개요
+│   ├── BROKER_APIS.md                # 브로커 API 연동
+│   ├── EXTERNAL_APIS.md              # 외부 API 연동
+│   └── NOTIFICATION_SYSTEM.md        # 알림 시스템
+│
+└── deployment/                       # 배포 및 운영 문서
+    ├── SETUP_GUIDE.md                # 초기 설정 가이드
+    ├── CONFIGURATION.md              # 설정 파일 가이드
+    ├── TROUBLESHOOTING.md            # 문제 해결 가이드
+    └── MAINTENANCE.md                # 유지보수 가이드
 ```
 
 ## 문서 관리 규칙

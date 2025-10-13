@@ -64,8 +64,14 @@ python multi_agent_trading_system.py --auto
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
+│                    RUN AGENT                                │
+│              (최상위 실행 관리자)                           │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
 │               Orchestrator Agent                            │
-│              (시스템 총괄 관리)                             │
+│              (작업 분배 및 조정)                            │
 └─┬─────────┬─────────┬─────────┬─────────────────────────────┘
   │         │         │         │
   ▼         ▼         ▼         ▼
@@ -82,42 +88,42 @@ python multi_agent_trading_system.py --auto
 
 | 에이전트 | 주요 기능 | 파일명 |
 |---------|----------|--------|
-| 🎭 **Orchestrator** | 전체 워크플로우 관리, 에이전트 조정 | `orchestrator_agent.py` |
-| 📊 **Data Agent** | MongoDB 데이터 로딩, 기술지표 계산 | `data_agent.py` |
-| 🧠 **Strategy Agent** | 시장별 매매신호 생성, 전략 최적화 | `strategy_agent.py` |
-| ⚡ **Service Agent** | 백테스트 실행, 포트폴리오 관리 | `service_agent.py` |
-| 🔧 **Helper Agent** | 시스템 설정, MongoDB 연결 관리 | `helper_agent.py` |
+| 🚀 **RUN AGENT** | 최상위 실행 관리, 전체 Agent 라이프사이클 관리 | `run_agent.py` |
+| 🎭 **Orchestrator** | 작업 분배 및 조정, Agent 간 통신 중재 | `orchestrator/main_orchestrator.py` |
+| 📊 **Database Agent** | MongoDB 데이터 로딩, 기술지표 계산 | `project/router/data_agent_router.py` |
+| 🧠 **Strategy Agent** | 시장별 매매신호 생성, 전략 최적화 | `project/router/strategy_agent_router.py` |
+| ⚡ **Service Agent** | 백테스트 실행, 포트폴리오 관리 | `project/router/service_agent_router.py` |
+| 🔧 **Helper Agent** | 시스템 설정, MongoDB 연결 관리 | `project/router/helper_agent_router.py` |
 
 ## 📖 사용 방법
 
 ### 🎯 기본 실행 모드
 
-#### 1. 자동 모드 (초보자 추천)
+#### 1. RUN AGENT로 실행 (권장)
 ```bash
-python multi_agent_trading_system.py --auto
+python run_agent.py
 
-# 기본 설정:
-# • 기간: 2023년 전체
-# • NASDAQ: AAPL, MSFT, GOOGL, AMZN, TSLA, NVDA, META, NFLX
-# • NYSE: JPM, BAC, WMT, JNJ, PG, KO, DIS, IBM
+# 새로운 아키텍처:
+# • RUN AGENT가 모든 Agent 관리
+# • 자동 Agent 초기화 및 종료
+# • 실시간 상태 모니터링
 ```
 
-#### 2. 대화형 모드 (맞춤 설정)
+#### 2. 레거시 모드
 ```bash
-python multi_agent_trading_system.py
+python main_auto_trade.py
 
-# 설정 가능:
-백테스트 기간: 2024-01-01 ~ 2024-06-30
-NASDAQ 종목: AAPL,NVDA,TSLA
-NYSE 종목: JPM,KO,DIS
+# Project Layer 직접 사용:
+# • Indicator Layer → Strategy Layer → Service Layer
+# • 기존 방식 호환성 유지
 ```
 
-#### 3. 개별 에이전트 테스트
+#### 3. 개별 Layer 테스트
 ```bash
-python data_agent.py      # 데이터 로딩 테스트
-python strategy_agent.py  # 신호 생성 테스트
-python service_agent.py   # 백테스트 테스트
-python helper_agent.py    # 시스템 상태 확인
+# Project Layer별 직접 실행
+python -m project.indicator.data_frame_generator
+python -m project.strategy.signal_generation_service
+python -m project.service.daily_backtest_service
 ```
 
 ## ⚡ 성능
@@ -159,24 +165,75 @@ python helper_agent.py    # 시스템 상태 확인
 
 ### 🔧 주요 파일 구조
 ```
-Project/
-├── multi_agent_trading_system.py  # 🚀 메인 실행 파일
-├── orchestrator_agent.py          # 🎭 총괄 관리자
-├── data_agent.py                  # 📊 데이터 처리
-├── strategy_agent.py              # 🧠 전략 엔진
-├── service_agent.py               # ⚡ 백테스트 실행
-└── helper_agent.py                # 🔧 시스템 관리
+# 최상위 실행
+run_agent.py                       # 🚀 RUN AGENT (메인 실행)
+main_auto_trade.py                 # 🔄 레거시 실행 파일
 
+# Agent 구조
+agents/
+├── run_agent/                     # 🚀 RUN AGENT
+│   ├── agent.py
+│   ├── config.yaml
+│   └── README.md
+├── helper_agent/                  # 🔧 Helper Agent
+├── database_agent/                # 📊 Database Agent (구조 예정)
+├── strategy_agent/                # 🧠 Strategy Agent
+└── service_agent/                 # ⚡ Service Agent
+
+# Orchestrator
+orchestrator/
+├── main_orchestrator.py           # 🎭 메인 오케스트레이터
+├── multi_agent_orchestrator.py
+└── agent_scheduler.py
+
+# Project Layers
+project/
+├── indicator/                     # Indicator Layer
+│   ├── data_frame_generator.py
+│   └── technical_indicators.py
+├── strategy/                      # Strategy Layer
+│   └── signal_generation_service.py
+├── service/                       # Service Layer
+│   └── daily_backtest_service.py
+├── database/                      # Database Layer
+│   ├── mongodb_operations.py
+│   └── database_manager.py
+├── Helper/                        # Helper Layer
+│   └── kis_api_helper_us.py
+└── router/                        # Agent Routers
+    ├── helper_agent_router.py
+    ├── data_agent_router.py
+    ├── strategy_agent_router.py
+    └── service_agent_router.py
+
+# 설정 파일
 config/
 ├── api_credentials.yaml           # API 인증 정보
 ├── broker_config.yaml             # 브로커 설정
-├── agent_model.yaml               # 에이전트 모델 설정
-└── risk_management.yaml           # 리스크 관리 설정
+├── agent_model.yaml               # Agent 모델 설정
+└── risk_management.yaml           # 리스크 관리
 
+# 문서
 docs/
-├── USER_MANUAL.md                 # 📖 사용자 매뉴얼
-├── QUICK_START_GUIDE.md           # 🚀 빠른 시작
-└── ARCHITECTURE_GUIDE.md          # 🏗️ 아키텍처
+├── interfaces/                    # Layer 인터페이스 명세
+│   ├── STRATEGY_LAYER_INTERFACE.md
+│   ├── SERVICE_LAYER_INTERFACE.md
+│   ├── HELPER_LAYER_INTERFACE.md
+│   ├── INDICATOR_LAYER_INTERFACE.md
+│   └── DATABASE_LAYER_INTERFACE.md
+├── modules/                       # Layer 모듈 설명
+│   ├── STRATEGY_MODULES.md
+│   ├── SERVICE_MODULES.md
+│   ├── HELPER_MODULES.md
+│   ├── INDICATOR_MODULES.md
+│   └── DATABASE_MODULES.md
+├── specs/                         # 알고리즘 상세
+│   ├── SIGNAL_GENERATION_SPEC.md
+│   ├── BACKTEST_SERVICE_SPEC.md
+│   ├── API_INTEGRATION_SPEC.md
+│   ├── TECHNICAL_INDICATORS_SPEC.md
+│   └── DATABASE_SCHEMA.md
+└── architecture/                  # 아키텍처 문서
 ```
 
 ## 🛠️ 설치 및 설정
@@ -232,7 +289,31 @@ python multi_agent_trading_system.py --auto
 **🚀 지금 바로 시작하세요!**
 
 ```bash
-cd Project && python multi_agent_trading_system.py --auto
+# 새로운 RUN AGENT 방식 (권장)
+python run_agent.py
+
+# 또는 레거시 방식
+python main_auto_trade.py
 ```
 
 **Happy Trading! 📈**
+
+---
+
+## 📊 최근 업데이트 (2025-10-09)
+
+### ✅ 새로운 아키텍처 (v2.0)
+- **RUN AGENT 추가**: 최상위 실행 관리자 구현
+- **Layer 구조 명확화**: 5개 Layer 완전 분리 (Helper, Database, Indicator, Strategy, Service)
+- **문서화 완료**: 15개 문서 완성 (interfaces, modules, specs)
+
+### 📚 문서 체계 완성
+- **Interface 문서**: 5개 Layer 입출력 명세
+- **Modules 문서**: 모든 모듈 상세 설명
+- **Spec 문서**: 알고리즘 및 스키마 명세
+
+### 🏗️ 아키텍처 개선
+```
+이전: Orchestrator → Agent
+현재: RUN AGENT → Orchestrator → Agent → Layer
+```

@@ -1,0 +1,98 @@
+daily_performance: []
+drawdown_analysis: {}
+financial_metrics:
+  error: No daily returns data available
+overview:
+  backtest_period:
+    duration_days: 364
+    end_date: '2023-12-31'
+    start_date: '2023-01-01'
+    trading_days: 0
+  initial_settings:
+    initial_capital: $100,000,000.00
+    max_positions: 10
+    risk_per_trade: 3.0%
+    slippage_assumption: 0.20%
+  report_info:
+    generated_at: '2025-10-03T06:51:15.538159'
+    report_version: '1.0'
+    system_name: AI Assistant Multi-Agent Trading System
+  strategy_description:
+    indicators_used:
+    - RSI
+    - MACD
+    - Bollinger Bands
+    - Volume
+    name: Unified Multi-Agent Strategy
+    rebalancing_frequency: Daily
+    risk_management: Portfolio-based position sizing with stop-loss
+    type: Technical Analysis Based
+  universe:
+    symbol_list:
+    - SPY
+    - QQQ
+    - IWM
+    - DIA
+    - VTI
+    - AAPL
+    - MSFT
+    - GOOGL
+    - AMZN
+    - META
+    - NVDA
+    - TSLA
+    - JPM
+    - V
+    - MA
+    - UNH
+    - JNJ
+    - WMT
+    - PG
+    - DIS
+    symbols_traded: 0
+    total_symbols: 600
+    truncated: true
+performance_summary: {}
+raw_results:
+  avg_cash_ratio: !!python/object/apply:numpy._core.multiarray.scalar
+  - &id001 !!python/object/apply:numpy.dtype
+    args:
+    - f8
+    - false
+    - true
+    state: !!python/tuple
+    - 3
+    - <
+    - null
+    - null
+    - null
+    - -1
+    - -1
+    - 0
+  - !!binary |
+    AAAAAAAAWUA=
+  execution_time: 3.593191
+  failed_loads: 550
+  final_value: 3.5179999999999962
+  half_sell_trades: 0
+  initial_cash: 100.0
+  losing_trades: 0
+  losscut_trades: 0
+  max_drawdown: !!python/object/apply:numpy._core.multiarray.scalar
+  - *id001
+  - !!binary |
+    5NpQMc7f7r8=
+  max_positions_used: 0
+  method: Sophisticated Trading Engine
+  period: 2023-01-01 ~ 2023-12-31
+  signal_sell_trades: 0
+  simulation_mode: false
+  sophisticated_engine: true
+  successful_loads: 50
+  total_return: -0.96482
+  total_symbols_tested: 600
+  total_trades: 15
+  win_rate: 0.0
+  winning_trades: 0
+symbol_performance: {}
+trade_history: []

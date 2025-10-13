@@ -1,0 +1,149 @@
+ALPHA_VENTAGE_API_KEY: R17JQUZCUIWQ4D7Z
+DATABENTO_APP_KEY: db-qtVrEHGgx8BGBamMeM3Mrt8mtsSSF
+FINNHUB_API_KEY: d1dsagpr01qpp0b3q6h0d1dsagpr01qpp0b3q6hg
+LS_REAL_ACNT_PRDT_CD: '01'
+LS_REAL_APP_KEY: PShtU3PA5zyLCv0vudKFEe7lTet1j302Fj6e
+LS_REAL_APP_SECRET: VaNM8kpz0dkUKlNi43I4BZV2KDuCmyQm
+LS_REAL_CANO: '207562430'
+LS_REAL_ID: st861107
+LS_REAL_TOKEN_PATH: json/token/stock_token_ls.json
+LS_REAL_URL: https://openapi.ls-sec.co.kr:8080
+MONGODB_ID: admin
+MONGODB_LOCAL: localhost
+MONGODB_MAIN: 192.168.55.85
+MONGODB_NAS: 192.168.55.14
+MONGODB_PORT: 27017
+MONGODB_PW: wlsaud07
+MONGODB_WORKSTATION: 192.168.55.19
+REAL_ACNT_PRDT_CD: '01'
+REAL_APP_KEY: PSb6kYOEEQWx8MWOsKzraksJWv41XrnOpRkf
+REAL_APP_SECRET: UOaGLIR/cJg9kWADGn6LrGy4YgXTwXaLn8BdqXPCjF3wXAIgFuB6doM3iKz2j7Hc5fObb9xMr7IAb2lFMw2SwMMKcT/l3HoGl5ITCHRpt6W4eh5tmdA8KPovAQzTt0CX8o+HIvNFbTL/HQhvepRKBfsHPpvQVtQNcGr/WImWfEiAfSCNuyo=
+REAL_CANO: '64239909'
+REAL_KIS_ID: st861107
+REAL_TOKEN_PATH: json/token/stock_token_real.json
+REAL_URL: https://openapi.koreainvestment.com:9443
+REAL_WEBSOCKET_URL: ws://ops.koreainvestment.com:21000
+VIRTUAL1_ACNT_PRDT_CD: '01'
+VIRTUAL1_APP_KEY: PSolhxX21mivsSTHUOqEm2tR319zl7r2mNr1
+VIRTUAL1_APP_SECRET: iAEFaqsWB6pCX9Twc/M7/qb7gvefDzDSOUzh4orGcush597Nlp30ZW9hMn420jTdeX8eD3qlMziRNglMZO3iFiJh+AT0nlpaU5wkIVItizRYFZui+J8vtKF+Qr5yk7eSrHiAbRmqdFZxeVVW7NIx7emgF2VDmzITjoZFSV52Pu73z0/96IY=
+VIRTUAL1_CANO: '50115253'
+VIRTUAL1_KIS_ID: st861107
+VIRTUAL1_TOKEN_PATH: json/token/stock_token_virtual1.json
+VIRTUAL2_ACNT_PRDT_CD: '01'
+VIRTUAL2_APP_KEY: PSolhxX21mivsSTHUOqEm2tR319zl7r2mNr1
+VIRTUAL2_APP_SECRET: iAEFaqsWB6pCX9Twc/M7/qb7gvefDzDSOUzh4orGcush597Nlp30ZW9hMn420jTdeX8eD3qlMziRNglMZO3iFiJh+AT0nlpaU5wkIVItizRYFZui+J8vtKF+Qr5yk7eSrHiAbRmqdFZxeVVW7NIx7emgF2VDmzITjoZFSV52Pu73z0/96IY=
+VIRTUAL2_CANO: '50115253'
+VIRTUAL2_KIS_ID: st861107
+VIRTUAL2_TOKEN_PATH: json/token/stock_token_virtual2.json
+VIRTUAL_URL: https://openapivts.koreainvestment.com:29443
+VIRTUAL_WEBSOCKET_URL: ws://ops.koreainvestment.com:31000
+backtest_settings:
+  default_mode:
+    max_symbols: 20
+    sample_size: 20
+    use_all_symbols: false
+  performance_settings:
+    include_drawdown_analysis: true
+    include_financial_metrics: true
+    include_symbol_performance: true
+    include_trade_history: true
+  report_settings:
+    compress_results: false
+    file_format: yaml
+    include_charts: false
+    output_directory: Report/Backtest
+  symbol_selection:
+    exclude_penny_stocks: true
+    method: database_all
+    min_daily_volume: 1000000
+    min_market_cap: 1000000000
+global_settings:
+  BACKTEST_MODE: LIMITED
+  DEBUG: true
+  default_log_level: INFO
+market_specific_configs:
+  HK:
+    backtest_parameters:
+      end_date: '2025-05-06'
+      start_date: '2019-01-01'
+      time_frame: D
+    log_file: log/hk_system_trade.log
+    max_holding_stocks: 5
+    max_websocket_subscriptions: 38
+    min_loss_cut_percentage: 0.03
+    operational_flags:
+      buy_new_stocks: true
+      debug_mode: true
+      run_on_weekends: false
+    std_risk_per_trade: 0.05
+    strategy_name: A
+    timezone: Asia/Hong_Kong
+  KR:
+    backtest_parameters:
+      end_date: '2025-06-23'
+      report_name_suffix: KR_Backtest
+      start_date: '2019-01-01'
+      time_frame: D
+    log_file: log/kr_system_trade.log
+    max_holding_stocks: 5
+    max_websocket_subscriptions: 40
+    min_loss_cut_percentage: 0.03
+    operational_flags:
+      buy_new_stocks: true
+      debug_mode: true
+      run_on_weekends: false
+    std_risk_per_trade: 0.1
+    strategy_name: A
+    timezone: Asia/Seoul
+  US:
+    area_code: US
+    backtest_parameters:
+      end_date: auto
+      start_date: '2020-01-01'
+      time_frame: M
+    credential_profile: KJM_US
+    log_file: log/us_system_trade.log
+    market_code: ALL
+    max_holding_stocks: 10
+    max_single_stock_ratio: 0.4
+    max_websocket_subscriptions: 40
+    min_loss_cut_percentage: 0.03
+    operational_flags:
+      buy_new_stocks: true
+      debug_mode: true
+      enable_half_sell: true
+      enable_pyramiding: true
+      force_new_stock_analysis: true
+      run_on_weekends: true
+    pyramiding_ratio: 0.1
+    std_risk_per_trade: 0.05
+    strategy_name: A
+    test_trading:
+      max_position_size: 1
+      max_stock_price: 5.0
+      min_cash_reserve: 0.9
+    timezone: America/New_York
+my_agent: '''Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML,
+  like Gecko) Chrome/35.0.1916.47 Safari/537.36'
+ops: ws://ops.koreainvestment.com:21000
+prod: https://openapi.koreainvestment.com:9443
+realtime_display:
+  enabled: true
+  mode: full
+  symbols: []
+symbol_analysis:
+  fallback_symbols:
+  - AAPL
+  - MSFT
+  - GOOGL
+  - AMZN
+  - TSLA
+  - NVDA
+  - META
+  - NFLX
+  - CRM
+  - ADBE
+  sample_size: 100
+  use_all_symbols: false
+vops: ws://ops.koreainvestment.com:31000
+vps: https://openapivts.koreainvestment.com:29443

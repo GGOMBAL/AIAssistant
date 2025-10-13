@@ -12,6 +12,7 @@
       "enabled": true,
       "models": [
         "claude-3-opus-20240229",
+        "claude-3-5-sonnet-20241022",
         "claude-3-sonnet-20240229",
         "claude-3-haiku-20240307"
       ],
@@ -50,24 +51,30 @@
       "strategy": "quality_first"
     },
     "data_agent": {
-      "primary": "claude-3-sonnet-20240229",
-      "fallback": "gemini-pro",
+      "primary": "claude-3-5-sonnet-20241022",
+      "fallback": "claude-3-sonnet-20240229",
       "strategy": "efficiency_first"
     },
     "strategy_agent": {
-      "primary": "claude-3-opus-20240229",
+      "primary": "claude-3-5-sonnet-20241022",
       "fallback": "claude-3-sonnet-20240229",
       "strategy": "quality_first"
     },
     "service_agent": {
-      "primary": "claude-3-sonnet-20240229",
-      "fallback": "claude-3-haiku-20240307",
+      "primary": "claude-3-5-sonnet-20241022",
+      "fallback": "claude-3-sonnet-20240229",
       "strategy": "reliability_first"
     },
     "helper_agent": {
-      "primary": "claude-3-sonnet-20240229",
-      "fallback": "gemini-pro",
+      "primary": "claude-3-5-sonnet-20241022",
+      "fallback": "claude-3-sonnet-20240229",
       "strategy": "cost_efficiency"
+    },
+    "run_agent": {
+      "primary": "claude-3-5-sonnet-20241022",
+      "fallback": "claude-3-sonnet-20240229",
+      "strategy": "speed_first",
+      "description": "File execution and process management - needs fast responses"
     }
   },
   "task_mappings": {
@@ -85,6 +92,12 @@
       "backtesting": "claude-3-sonnet-20240229",
       "order_execution": "claude-3-haiku-20240307",
       "risk_monitoring": "claude-3-sonnet-20240229"
+    },
+    "file_execution": {
+      "python_script": "claude-3-haiku-20240307",
+      "backtest_file": "claude-3-sonnet-20240229",
+      "process_monitoring": "claude-3-haiku-20240307",
+      "file_operations": "gemini-pro"
     }
   },
   "mcp_integration": {

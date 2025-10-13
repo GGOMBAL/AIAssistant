@@ -1,0 +1,274 @@
+# Signal Generation Configuration
+# 시그널 생성 설정 - 사용자가 쉽게 수정 가능
+
+# ==================== 기본 설정 ====================
+strategy_name: "Multi-Timeframe Momentum Strategy"
+version: "1.0"
+enabled: true
+
+# ==================== RS (상대강도) 신호 설정 ====================
+rs_signal:
+  enabled: true
+  weight: 0.2  # 전체 신호에서의 가중치
+  conditions:
+    - indicator: "RS_4W"
+      operator: ">="
+      threshold: 70  # 90 → 70으로 완화 (테스트용)
+      description: "4주 상대강도가 70 이상"
+
+    # 추가 조건 예시 (주석 해제하여 사용)
+    # - indicator: "RS_12W"
+    #   operator: ">="
+    #   threshold: 85
+    #   description: "12주 상대강도가 85 이상"
+
+# ==================== 주봉 (Weekly) 신호 설정 ====================
+weekly_signal:
+  enabled: true
+  weight: 0.2
+  conditions:
+    - indicator: "close"
+      operator: ">"
+      reference: "52_week_high"
+      multiplier: 0.90
+      description: "현재가가 52주 최고가의 90% 이상"
+
+    # 추가 조건 예시
+    # - indicator: "volume"
+    #   operator: ">"
+    #   reference: "avg_volume_20"
+    #   multiplier: 1.5
+    #   description: "거래량이 평균의 1.5배 이상"
+
+# ==================== 펀더멘털 신호 설정 ====================
+fundamental_signal:
+  enabled: true
+  weight: 0.2
+  conditions:
+    - indicator: "EPS_YOY"
+      operator: ">"
+      threshold: 0
+      description: "EPS 전년 대비 성장"
+
+    - indicator: "REV_YOY"
+      operator: ">"
+      threshold: 0
+      description: "매출 전년 대비 성장"
+
+    # 추가 조건 예시
+    # - indicator: "ROE"
+    #   operator: ">="
+    #   threshold: 15
+    #   description: "ROE가 15% 이상"
+
+    # - indicator: "PBR"
+    #   operator: "<"
+    #   threshold: 5
+    #   description: "PBR이 5 미만"
+
+# ==================== 어닝스 신호 설정 ====================
+earnings_signal:
+  enabled: true
+  weight: 0.2
+  conditions:
+    # 연속 성장 조건
+    - type: "consecutive_growth"
+      indicators:
+        - name: "rev_yoy"
+          quarters: 2
+          description: "매출이 2분기 연속 성장"
+
+    - type: "consecutive_growth"
+      indicators:
+        - name: "eps_yoy"
+          quarters: 2
+          description: "EPS가 2분기 연속 성장"
+
+    # 단순 임계값 조건 예시
+    # - indicator: "eps_surprise"
+    #   operator: ">"
+    #   threshold: 5
+    #   description: "EPS 서프라이즈가 5% 이상"
+
+# ==================== 일봉 + RS 결합 신호 설정 ====================
+daily_rs_signal:
+  enabled: true
+  weight: 0.2
+
+  # 브레이크아웃 타입별 설정
+  breakout_types:
+    # 20일 최고가 돌파
+    highest_20:
+      enabled: true
+      lookback_period: 20
+      rs_threshold: 90
+      description: "20일 최고가 돌파 + RS >= 90"
+
+    # 60일 최고가 돌파
+    highest_60:
+      enabled: true
+      lookback_period: 60
+      rs_threshold: 90
+      description: "60일 최고가 돌파 + RS >= 90"
+
+    # 120일 최고가 돌파
+    highest_120:
+      enabled: true
+      lookback_period: 120
+      rs_threshold: 90
+      description: "120일 최고가 돌파 + RS >= 90"
+
+    # 240일 최고가 돌파
+    highest_240:
+      enabled: true
+      lookback_period: 240
+      rs_threshold: 90
+      description: "240일 최고가 돌파 + RS >= 90"
+
+    # 52주 최고가 돌파
+    highest_52w:
+      enabled: true
+      rs_threshold: 90
+      description: "52주 최고가 돌파 + RS >= 90"
+
+    # 1년 최고가 돌파
+    highest_1y:
+      enabled: true
+      rs_threshold: 90
+      description: "1년 최고가 돌파 + RS >= 90"
+
+  # 추가 필터 조건
+  filters:
+    - indicator: "ADR"
+      operator: "<"
+      threshold: 10
+      description: "ADR이 10% 미만 (변동성 필터)"
+
+# ==================== 신호 결합 설정 ====================
+signal_combination:
+  # 최소 요구 신호 개수
+  min_signals_required: 2
+
+  # 신호 강도 계산 방식: "weighted_average" 또는 "majority_vote"
+  calculation_method: "weighted_average"
+
+  # BUY 신호 발생을 위한 최소 신호 강도
+  buy_threshold: 0.6
+
+  # 신호 강도별 신뢰도
+  confidence_levels:
+    low: 0.5    # 신호 강도 < 0.6
+    medium: 0.7  # 0.6 <= 신호 강도 < 0.8
+    high: 0.9    # 신호 강도 >= 0.8
+
+# ==================== 가격 타겟 설정 ====================
+price_targets:
+  # 목표가 계산 방식
+  target_price_multiplier: 1.20  # 진입가 대비 20% 상승
+
+  # 손절가 계산 방식
+  losscut_price_multiplier: 0.95  # 진입가 대비 5% 하락
+
+  # ATR 기반 동적 타겟 (선택사항)
+  use_atr_targets: false
+  atr_multiplier_target: 3.0
+  atr_multiplier_losscut: 2.0
+
+# ==================== 커스텀 지표 설정 ====================
+custom_indicators:
+  # 사용자 정의 지표 추가 가능
+  enabled: false
+
+  # 예시: 볼린저 밴드 %B
+  # bollinger_percent_b:
+  #   enabled: false
+  #   period: 20
+  #   std_dev: 2
+  #   conditions:
+  #     - operator: ">"
+  #       threshold: 0.8
+  #       description: "%B가 0.8 이상 (상단 밴드 근처)"
+
+# ==================== 신호 우선순위 ====================
+signal_priority:
+  # 신호 타입별 우선순위 (1이 가장 높음)
+  daily_rs: 1
+  rs: 2
+  weekly: 3
+  earnings: 4
+  fundamental: 5
+
+# ==================== 리스크 관리 ====================
+risk_management:
+  # 최대 포지션 크기 (계좌 대비 %)
+  max_position_size: 20
+
+  # 신호 강도에 따른 포지션 크기 조정
+  position_sizing_by_strength:
+    enabled: true
+    min_size: 5   # 최소 5%
+    max_size: 20  # 최대 20%
+
+  # 섹터 집중도 제한
+  max_sector_concentration: 40
+
+# ==================== 백테스트 설정 ====================
+backtest:
+  # 과거 데이터 기간
+  lookback_years: 3
+
+  # 신호 생성 시작일 (상대적)
+  signal_start_offset_days: 365
+
+  # 리샘플링 주기 (백테스트 속도 향상)
+  resample_frequency: "1D"  # 일봉 단위
+
+# ==================== 설정 변경 가이드 ====================
+#
+# 1. 조건 연산자:
+#    - ">": 초과
+#    - ">=": 이상
+#    - "<": 미만
+#    - "<=": 이하
+#    - "==": 같음
+#    - "!=": 다름
+#
+# 2. 지표 추가 방법:
+#    conditions 리스트에 새로운 항목 추가:
+#    - indicator: "지표명"
+#      operator: "연산자"
+#      threshold: 임계값
+#      description: "설명"
+#
+# 3. 신호 비활성화:
+#    enabled: false로 설정
+#
+# 4. 가중치 조정:
+#    weight 값을 변경 (합계가 1.0이 되도록 권장)
+#
+# 5. 임계값 변경:
+#    threshold 값을 원하는 값으로 수정
+#
+# ==================== 예시 설정 ====================
+#
+# 예시 1: RS 조건 완화 (90 → 80)
+# rs_signal:
+#   conditions:
+#     - indicator: "RS_4W"
+#       threshold: 80  # 90에서 80으로 변경
+#
+# 예시 2: 펀더멘털 조건 추가
+# fundamental_signal:
+#   conditions:
+#     - indicator: "EPS_YOY"
+#       operator: ">"
+#       threshold: 0
+#     - indicator: "ROE"  # 신규 추가
+#       operator: ">="
+#       threshold: 15
+#
+# 예시 3: 신호 가중치 재조정
+# rs_signal:
+#   weight: 0.3  # 0.2에서 0.3으로 증가
+# weekly_signal:
+#   weight: 0.1  # 0.2에서 0.1으로 감소

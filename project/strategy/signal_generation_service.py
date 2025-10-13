@@ -3,6 +3,8 @@
 Signal Generation Service - Strategy Layer
 Based on refer/Strategy/Strategy_A.py
 Implements trend-following signal generation with multi-timeframe analysis
+
+Updated: 2025-10-13 - 설정 파일 기반 시그널 생성 지원
 """
 
 import pandas as pd
@@ -11,6 +13,14 @@ from typing import Dict, List, Optional, Tuple, Any
 from enum import Enum
 from datetime import datetime, timedelta
 import logging
+
+# Import config loader
+try:
+    from project.strategy.signal_config_loader import SignalConfigLoader
+    CONFIG_LOADER_AVAILABLE = True
+except ImportError:
+    CONFIG_LOADER_AVAILABLE = False
+    logger.warning("SignalConfigLoader not available - using hardcoded values")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -35,12 +45,38 @@ class SignalGenerationService:
     """
     추세추종 신호 생성 서비스
     다중 타임프레임 분석을 통한 매매 신호 생성
+
+    Updated: 설정 파일 기반 시그널 조건 지원
     """
 
-    def __init__(self, area: str = 'US', trading_mode: bool = False):
+    def __init__(self, area: str = 'US', trading_mode: bool = False, config_path: Optional[str] = None):
+        """
+        Initialize SignalGenerationService
+
+        Args:
+            area: 시장 지역 (US, KR 등)
+            trading_mode: 트레이딩 모드 여부
+            config_path: 시그널 설정 파일 경로 (None이면 기본 경로 사용)
+        """
         self.area = area
         self.trading_mode = trading_mode
         self.signals_cache = {}
+
+        # 설정 로더 초기화
+        if CONFIG_LOADER_AVAILABLE:
+            try:
+                self.config_loader = SignalConfigLoader(config_path)
+                self.use_config = True
+                logger.info("SignalConfigLoader initialized successfully")
+                self.config_loader.print_summary()
+            except Exception as e:
+                logger.warning(f"Failed to load config: {e}. Using default values.")
+                self.config_loader = None
+                self.use_config = False
+        else:
+            self.config_loader = None
+            self.use_config = False
+            logger.info("Using hardcoded signal conditions")
 
     def generate_comprehensive_signals(self,
                                      df_daily: pd.DataFrame,
@@ -61,6 +97,11 @@ class SignalGenerationService:
 
         Returns:
             종합 신호 정보 딕셔너리
+
+        Note:
+            데이터 타입별 사용 시점:
+            - RS, D (일봉): iloc[-2] (T-1, 전날 데이터) - 당일 종가는 장 마감 후 확정
+            - W, F, E (주봉, 펀더멘털, 어닝스): iloc[-1] (T, 최신 데이터) - 이미 확정된 과거 데이터
         """
         try:
             signals = {
@@ -107,6 +148,152 @@ class SignalGenerationService:
         except Exception as e:
             logger.error(f"Error generating comprehensive signals: {e}")
             return self._get_default_signals()
+
+    def generate_signals_timeseries(self,
+                                   df_daily: pd.DataFrame,
+                                   df_weekly: pd.DataFrame = None,
+                                   df_rs: pd.DataFrame = None,
+                                   df_fundamental: pd.DataFrame = None,
+                                   df_earnings: pd.DataFrame = None,
+                                   start_date: str = None,
+                                   end_date: str = None) -> pd.DataFrame:
+        """
+        백테스트용 시계열 신호 생성
+        전체 기간에 대해 일별 신호를 생성하여 DataFrame으로 반환
+
+        Args:
+            df_daily: 일봉 데이터
+            df_weekly: 주봉 데이터 (선택)
+            df_rs: RS 데이터 (선택)
+            df_fundamental: 펀더멘털 데이터 (선택)
+            df_earnings: 어닝스 데이터 (선택)
+            start_date: 시작 날짜 (YYYY-MM-DD), None이면 데이터 시작부터
+            end_date: 종료 날짜 (YYYY-MM-DD), None이면 데이터 끝까지
+
+        Returns:
+            시계열 신호 DataFrame
+            Columns: ['Date', 'signal', 'signal_strength', 'confidence',
+                     'target_price', 'losscut_price', 'signal_type',
+                     'weekly_signal', 'rs_signal', 'fundamental_signal',
+                     'earnings_signal', 'daily_rs_signal']
+        """
+        try:
+            if df_daily is None or df_daily.empty:
+                logger.warning("Daily dataframe is empty")
+                return pd.DataFrame()
+
+            # 날짜 인덱스 확인
+            if 'Date' in df_daily.columns:
+                dates = df_daily['Date']
+            elif isinstance(df_daily.index, pd.DatetimeIndex):
+                dates = df_daily.index
+            else:
+                logger.error("Cannot find date column in daily dataframe")
+                return pd.DataFrame()
+
+            # 시작/종료 날짜 필터링
+            if start_date:
+                start_dt = pd.to_datetime(start_date)
+                dates = dates[dates >= start_dt]
+            if end_date:
+                end_dt = pd.to_datetime(end_date)
+                dates = dates[dates <= end_dt]
+
+            if len(dates) == 0:
+                logger.warning("No data in specified date range")
+                return pd.DataFrame()
+
+            # 결과 저장할 리스트
+            signals_list = []
+
+            # 최소 2일 데이터 필요 (T-1 사용)
+            if len(df_daily) < 2:
+                logger.warning("Need at least 2 days of data")
+                return pd.DataFrame()
+
+            # 각 날짜에 대해 신호 생성
+            for i in range(1, len(df_daily)):  # 1부터 시작 (최소 1일 전 데이터 필요)
+                current_date = df_daily.index[i] if isinstance(df_daily.index, pd.DatetimeIndex) else df_daily.iloc[i]['Date']
+
+                # 날짜 범위 체크
+                if start_date and current_date < pd.to_datetime(start_date):
+                    continue
+                if end_date and current_date > pd.to_datetime(end_date):
+                    break
+
+                # 해당 시점까지의 데이터만 사용 (Look-ahead bias 방지)
+                df_daily_slice = df_daily.iloc[:i+1]
+
+                df_weekly_slice = None
+                if df_weekly is not None and not df_weekly.empty:
+                    if isinstance(df_weekly.index, pd.DatetimeIndex):
+                        df_weekly_slice = df_weekly[df_weekly.index <= current_date]
+                    else:
+                        df_weekly_slice = df_weekly[df_weekly['Date'] <= current_date]
+
+                df_rs_slice = None
+                if df_rs is not None and not df_rs.empty:
+                    if isinstance(df_rs.index, pd.DatetimeIndex):
+                        df_rs_slice = df_rs[df_rs.index <= current_date]
+                    else:
+                        df_rs_slice = df_rs[df_rs['Date'] <= current_date]
+
+                df_fundamental_slice = None
+                if df_fundamental is not None and not df_fundamental.empty:
+                    if isinstance(df_fundamental.index, pd.DatetimeIndex):
+                        df_fundamental_slice = df_fundamental[df_fundamental.index <= current_date]
+                    else:
+                        df_fundamental_slice = df_fundamental[df_fundamental['Date'] <= current_date]
+
+                df_earnings_slice = None
+                if df_earnings is not None and not df_earnings.empty:
+                    if isinstance(df_earnings.index, pd.DatetimeIndex):
+                        df_earnings_slice = df_earnings[df_earnings.index <= current_date]
+                    else:
+                        df_earnings_slice = df_earnings[df_earnings['Date'] <= current_date]
+
+                # 신호 생성 (내부에서 T-1 데이터 사용)
+                signal_data = self.generate_comprehensive_signals(
+                    df_daily=df_daily_slice,
+                    df_weekly=df_weekly_slice,
+                    df_rs=df_rs_slice,
+                    df_fundamental=df_fundamental_slice,
+                    df_earnings=df_earnings_slice
+                )
+
+                # 결과 저장
+                signal_row = {
+                    'Date': current_date,
+                    'signal': 1 if signal_data['final_signal'] == SignalType.BUY else 0,
+                    'signal_strength': signal_data['signal_strength'],
+                    'confidence': signal_data['confidence'],
+                    'target_price': signal_data['target_price'],
+                    'losscut_price': signal_data['losscut_price'],
+                    'signal_type': str(signal_data['signal_type']) if signal_data['signal_type'] else None,
+                    'weekly_signal': signal_data['signal_components'].get('weekly', 0),
+                    'rs_signal': signal_data['signal_components'].get('rs', 0),
+                    'fundamental_signal': signal_data['signal_components'].get('fundamental', 0),
+                    'earnings_signal': signal_data['signal_components'].get('earnings', 0),
+                    'daily_rs_signal': signal_data['signal_components'].get('daily_rs', 0)
+                }
+                signals_list.append(signal_row)
+
+            # DataFrame으로 변환
+            if len(signals_list) == 0:
+                logger.warning("No signals generated")
+                return pd.DataFrame()
+
+            signals_df = pd.DataFrame(signals_list)
+            signals_df.set_index('Date', inplace=True)
+
+            logger.info(f"Generated {len(signals_df)} timeseries signals")
+            return signals_df
+
+        except Exception as e:
+            logger.error(f"Error generating timeseries signals: {e}")
+            import traceback
+            traceback.print_exc()
+            return pd.DataFrame()
 
     def _generate_weekly_signals(self, df_weekly: pd.DataFrame) -> int:
         """
@@ -158,17 +345,43 @@ class SignalGenerationService:
     def _generate_rs_signals(self, df_rs: pd.DataFrame) -> int:
         """
         RS 신호 생성
+
+        Note: RS는 항상 T-1 (전날) 데이터 사용
+        Updated: 설정 파일의 RS 임계값 사용
         """
         try:
-            if df_rs.empty:
+            if df_rs.empty or len(df_rs) < 2:
                 return 0
 
-            latest = df_rs.iloc[-1]
-            rs_4w = latest.get('RS_4W', 0)
+            # 설정에서 활성화 여부 확인
+            if self.use_config and not self.config_loader.is_signal_enabled('rs'):
+                return 0
 
-            # RS >= 90 조건
-            if rs_4w >= 90:
-                return 1
+            # RS는 항상 전날 데이터 사용 (iloc[-2])
+            latest = df_rs.iloc[-2]
+            rs_4w = latest.get('RS_4W')
+            rs_4w = 0 if rs_4w is None or pd.isna(rs_4w) else rs_4w
+
+            # 설정 파일에서 RS 임계값 가져오기 (기본값 90)
+            rs_threshold = self.config_loader.get_rs_threshold() if self.use_config else 90
+
+            # RS 조건 평가
+            if self.use_config and self.config_loader.signal_config.rs_signal.conditions:
+                # 설정 파일의 조건들을 모두 평가
+                all_conditions_met = True
+                for condition in self.config_loader.signal_config.rs_signal.conditions:
+                    if condition.indicator == 'RS_4W':
+                        condition_met = self.config_loader.evaluate_condition(condition, rs_4w)
+                        if not condition_met:
+                            all_conditions_met = False
+                            break
+                    # 다른 RS 지표 추가 가능 (RS_12W 등)
+
+                return 1 if all_conditions_met else 0
+            else:
+                # 기본 로직: RS >= threshold
+                if rs_4w >= rs_threshold:
+                    return 1
 
             return 0
 
@@ -201,16 +414,27 @@ class SignalGenerationService:
 
             else:
                 # 미국 시장 조건 - refer Strategy_A.py line 184와 동일한 조건
-                market_cap = latest.get('MarketCapitalization', 0)
-                rev_yoy = latest.get('REV_YOY', 0)
-                eps_yoy = latest.get('EPS_YOY', 0)
-                revenue = latest.get('revenue', 0)
+                # 안전한 값 추출 (None을 0으로 변환)
+                market_cap = latest.get('MarketCapitalization')
+                market_cap = 0 if market_cap is None or pd.isna(market_cap) else market_cap
+
+                rev_yoy = latest.get('REV_YOY')
+                rev_yoy = 0 if rev_yoy is None or pd.isna(rev_yoy) else rev_yoy
+
+                eps_yoy = latest.get('EPS_YOY')
+                eps_yoy = 0 if eps_yoy is None or pd.isna(eps_yoy) else eps_yoy
+
+                revenue = latest.get('revenue')
+                revenue = 0 if revenue is None or pd.isna(revenue) else revenue
 
                 # 이전 데이터가 있는지 확인
                 if len(df_fundamental) >= 2:
                     prev = df_fundamental.iloc[-2]
-                    prev_rev_yoy = prev.get('REV_YOY', 0)
-                    prev_eps_yoy = prev.get('EPS_YOY', 0)
+                    prev_rev_yoy = prev.get('REV_YOY')
+                    prev_rev_yoy = 0 if prev_rev_yoy is None or pd.isna(prev_rev_yoy) else prev_rev_yoy
+
+                    prev_eps_yoy = prev.get('EPS_YOY')
+                    prev_eps_yoy = 0 if prev_eps_yoy is None or pd.isna(prev_eps_yoy) else prev_eps_yoy
                 else:
                     prev_rev_yoy = 0
                     prev_eps_yoy = 0
@@ -246,13 +470,26 @@ class SignalGenerationService:
             latest = df_earnings.iloc[-1]
             previous = df_earnings.iloc[-2]
 
+            # 안전한 값 추출 (None을 0으로 변환)
+            prev_rev_yoy = previous.get('rev_yoy')
+            prev_rev_yoy = 0 if prev_rev_yoy is None or pd.isna(prev_rev_yoy) else prev_rev_yoy
+
+            latest_rev_yoy = latest.get('rev_yoy')
+            latest_rev_yoy = 0 if latest_rev_yoy is None or pd.isna(latest_rev_yoy) else latest_rev_yoy
+
+            prev_eps_yoy = previous.get('eps_yoy')
+            prev_eps_yoy = 0 if prev_eps_yoy is None or pd.isna(prev_eps_yoy) else prev_eps_yoy
+
+            latest_eps_yoy = latest.get('eps_yoy')
+            latest_eps_yoy = 0 if latest_eps_yoy is None or pd.isna(latest_eps_yoy) else latest_eps_yoy
+
             # 매출 성장 조건
-            rev_condition1 = previous.get('rev_yoy', 0) >= 0
-            rev_condition2 = latest.get('rev_yoy', 0) > previous.get('rev_yoy', 0)
+            rev_condition1 = prev_rev_yoy >= 0
+            rev_condition2 = latest_rev_yoy > prev_rev_yoy
 
             # EPS 성장 조건
-            eps_condition1 = previous.get('eps_yoy', 0) >= 0
-            eps_condition2 = latest.get('eps_yoy', 0) > previous.get('eps_yoy', 0)
+            eps_condition1 = prev_eps_yoy >= 0
+            eps_condition2 = latest_eps_yoy > prev_eps_yoy
 
             # 둘 중 하나라도 성장하면 매수 신호
             if (rev_condition1 and rev_condition2) or (eps_condition1 and eps_condition2):
@@ -268,17 +505,21 @@ class SignalGenerationService:
         """
         일봉 + RS 결합 신호 생성 (Strategy_A.py의 핵심 로직)
         다양한 타임프레임 브레이크아웃 감지
+
+        Note: Daily와 RS 모두 T-1 (전날) 데이터 사용
         """
         try:
-            if df_daily.empty:
+            if df_daily.empty or len(df_daily) < 2:
                 return {'signal': 0, 'target_price': 0.0, 'losscut_price': 0.0, 'signal_type': None}
 
-            latest = df_daily.iloc[-1]
+            # Daily는 항상 전날 데이터 사용 (iloc[-2])
+            latest = df_daily.iloc[-2]
 
             # RS 조건
             rs_condition = 0
-            if df_rs is not None and not df_rs.empty:
-                rs_latest = df_rs.iloc[-1]
+            if df_rs is not None and not df_rs.empty and len(df_rs) >= 2:
+                # RS도 항상 전날 데이터 사용 (iloc[-2])
+                rs_latest = df_rs.iloc[-2]
                 rs_4w = rs_latest.get('RS_4W', 0)
                 rs_12w = rs_latest.get('RS_12W', 0)
                 rs_condition = 1 if rs_4w >= 90 else 0

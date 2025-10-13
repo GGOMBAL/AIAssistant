@@ -265,8 +265,8 @@ class DailyBacktestService:
             daily_results.append(day_result)
             portfolio_history.append(self._copy_portfolio(portfolio))
 
-            # Print daily summary (preserved from original)
-            if self.config.message_output or (i % 100 == 0):  # Periodic output
+            # Print daily summary - 모든 거래일 출력
+            if self.config.message_output or (i % 10 == 0):  # 10일마다 출력
                 self._print_daily_summary(date, portfolio, day_result)
 
         # Calculate performance metrics
@@ -304,20 +304,7 @@ class DailyBacktestService:
             for ticker in universe:
                 if ticker in df_data and not df_data[ticker].empty:
                     available_cols = [col for col in filtered_cols if col in df_data[ticker].columns]
-
-                    # DEBUG: Check BuySig values before filtering
-                    if 'BuySig' in df_data[ticker].columns:
-                        buysig_sum = df_data[ticker]['BuySig'].sum()
-                        buysig_max = df_data[ticker]['BuySig'].max()
-                        logger.info(f"[DATA_PREP] {ticker}: BuySig sum={buysig_sum}, max={buysig_max} BEFORE filtering")
-
                     df_data[ticker] = df_data[ticker][available_cols]
-
-                    # DEBUG: Check BuySig values after filtering
-                    if 'BuySig' in df_data[ticker].columns:
-                        buysig_sum_after = df_data[ticker]['BuySig'].sum()
-                        buysig_max_after = df_data[ticker]['BuySig'].max()
-                        logger.info(f"[DATA_PREP] {ticker}: BuySig sum={buysig_sum_after}, max={buysig_max_after} AFTER filtering")
 
             # Handle empty data case
             valid_data = {k: v for k, v in df_data.items() if not v.empty}
@@ -325,20 +312,8 @@ class DailyBacktestService:
                 logger.warning("No valid stock data available")
                 return pd.DataFrame()
 
-            # Combine dataframes
-            df_combined = pd.concat(valid_data.values(), axis=1, keys=valid_data.keys())
-
-            # DEBUG: Check BuySig values after concat
-            for ticker in ['ZS', 'LKQ', 'ELS']:
-                if ticker in valid_data:
-                    try:
-                        buysig_col = (ticker, 'BuySig')
-                        if buysig_col in df_combined.columns:
-                            buysig_sum = df_combined[buysig_col].sum()
-                            buysig_max = df_combined[buysig_col].max()
-                            logger.info(f"[AFTER_CONCAT] {ticker}: BuySig sum={buysig_sum}, max={buysig_max}")
-                    except Exception as e:
-                        logger.error(f"[AFTER_CONCAT] {ticker}: Error checking BuySig - {e}")
+            # 데이터를 MultiIndex DataFrame으로 결합
+            df_combined = pd.concat(valid_data, axis=1, keys=list(valid_data.keys()))
 
             # Create MultiIndex columns (preserved from original logic)
             if not isinstance(df_combined.columns, pd.MultiIndex):
@@ -358,25 +333,12 @@ class DailyBacktestService:
                         [universe, fields],
                         names=['Ticker', 'Field']
                     )
-                    logger.info(f"[MULTIINDEX] Created MultiIndex with {len(universe)} tickers and {len(fields)} fields")
                 except ValueError as e:
                     # Fallback: use available data structure
                     logger.warning(f"Using fallback column structure due to error: {e}")
                     df_combined.columns.names = ['Ticker', 'Field']
             else:
                 df_combined.columns.names = ['Ticker', 'Field']
-
-            # DEBUG: Check BuySig values after MultiIndex creation
-            for ticker in ['ZS', 'LKQ', 'ELS']:
-                if ticker in universe:
-                    try:
-                        buysig_col = (ticker, 'BuySig')
-                        if buysig_col in df_combined.columns:
-                            buysig_sum = df_combined[buysig_col].sum()
-                            buysig_max = df_combined[buysig_col].max()
-                            logger.info(f"[AFTER_MULTIINDEX] {ticker}: BuySig sum={buysig_sum}, max={buysig_max}")
-                    except Exception as e:
-                        logger.error(f"[AFTER_MULTIINDEX] {ticker}: Error checking BuySig - {e}")
 
             return df_combined
 
@@ -393,27 +355,30 @@ class DailyBacktestService:
         try:
             date_data = df.iloc[index]
 
-            for ticker in df.columns.levels[0]:
-                ticker_data = {}
-                for field in df.columns.levels[1]:
-                    if (ticker, field) in date_data.index:
-                        value = date_data[(ticker, field)]
+            # Handle MultiIndex columns properly
+            if isinstance(df.columns, pd.MultiIndex):
+                for ticker in df.columns.levels[0]:
+                    ticker_data = {}
+                    for field in df.columns.levels[1]:
+                        try:
+                            if (ticker, field) in df.columns:
+                                value = date_data[(ticker, field)]
 
-                        # DEBUG: Log only BuySig signals when found
-                        if field == 'BuySig' and value > 0:
-                            date_index = df.index[index] if index < len(df.index) else "Unknown"
-                            logger.info(f"[EXTRACT] {ticker} BuySig={value} found on {date_index}")
+                                # 문자열 필드는 그대로 보존, 숫자 필드만 float 변환
+                                if field in ['Sector', 'Industry', 'Type']:
+                                    ticker_data[field] = value if pd.notna(value) else ''
+                                else:
+                                    try:
+                                        ticker_data[field] = float(value) if pd.notna(value) else 0.0
+                                    except (ValueError, TypeError):
+                                        ticker_data[field] = 0.0
+                        except:
+                            pass  # Skip missing fields
 
-                        # 문자열 필드는 그대로 보존, 숫자 필드만 float 변환
-                        if field in ['Sector', 'Industry', 'Type']:
-                            ticker_data[field] = value if pd.notna(value) else ''
-                        else:
-                            try:
-                                ticker_data[field] = float(value) if pd.notna(value) else 0.0
-                            except (ValueError, TypeError):
-                                ticker_data[field] = 0.0
-
-                data[ticker] = ticker_data
+                    data[ticker] = ticker_data
+            else:
+                # Handle single-level columns
+                logger.warning("DataFrame has single-level columns, expected MultiIndex")
         except Exception as e:
             logger.error(f"Error extracting market data: {e}")
 
@@ -611,7 +576,10 @@ class DailyBacktestService:
 
     def _update_holding_position(self, ticker: str, position: Position,
                                current_price: float, previous_close: float):
-        """Update position for holding stocks (refer remain_stock 로직)"""
+        """
+        Update position for holding stocks (refer remain_stock 로직)
+        시그널이 0인 경우에도 보유중인 주식의 Gain 업데이트
+        """
         # refer Strategy_M.remain_stock과 동일한 업데이트 로직
         if previous_close > 0:
             daily_gain = (current_price - previous_close) / previous_close
@@ -631,24 +599,20 @@ class DailyBacktestService:
         """Identify buy candidates based on signals"""
         candidates = []
 
-        logger.info(f"[BUY_CANDIDATES] 검사 대상: {len(valid_stocks)}개 종목")
-
         for ticker in valid_stocks:
-            buy_signal = market_data[ticker].get('BuySig', 0)
-            signal = market_data[ticker].get('signal', 0)
+            ticker_data = market_data.get(ticker, {})
+            buy_signal = ticker_data.get('BuySig', 0)
+            signal = ticker_data.get('signal', 0)
 
-            # DEBUG: Log only when signals are found
-            if buy_signal > 0 or signal > 0:
-                logger.info(f"[BUY_DEBUG] {ticker}: BuySig={buy_signal}, signal={signal} -> SIGNAL FOUND!")
+            # DEBUG: First iteration only
+            if len(candidates) == 0 and len(valid_stocks) > 0:
+                logger.debug(f"[DEBUG] First ticker {ticker}: BuySig={buy_signal}, signal={signal}, "
+                           f"ticker_data keys={list(ticker_data.keys())[:10]}")
 
             # 매수 신호 검사: BuySig >= 1 또는 signal >= 1 (sophisticated signal 지원)
             if buy_signal >= 1 or signal >= 1:
                 candidates.append(ticker)
-                logger.info(f"[BUY_CANDIDATES] ✓ {ticker}: BuySig={buy_signal}, signal={signal} -> 매수 후보 추가")
-            else:
-                logger.info(f"[BUY_CANDIDATES] ✗ {ticker}: BuySig={buy_signal}, signal={signal} -> 신호 없음")
 
-        logger.info(f"[BUY_CANDIDATES] 총 매수 후보: {len(candidates)}개 ({candidates})")
         return candidates
 
     def _execute_buy_orders(self, candidates: List[str], portfolio: Portfolio,
@@ -657,31 +621,18 @@ class DailyBacktestService:
         trades = []
         available_slots = self.config.max_positions - portfolio.position_count
 
-        logger.info(f"[BUY_ORDERS] 사용 가능 슬롯: {available_slots}, 매수 후보: {len(candidates)}개")
-
-        if available_slots <= 0:
-            logger.info(f"[BUY_ORDERS] 매수 불가: 포지션 만료 (현재: {portfolio.position_count}/{self.config.max_positions})")
+        if available_slots <= 0 or not candidates:
             return trades
 
-        if not candidates:
-            logger.info(f"[BUY_ORDERS] 매수 불가: 매수 후보 없음")
-            return trades
-
-        # Process candidates (simplified version of original complex logic)
+        # Process candidates
         for ticker in candidates[:available_slots]:
             if ticker in portfolio.positions:
-                logger.info(f"[BUY_ORDERS] {ticker}: 이미 보유 중 -> 스킵")
                 continue
 
-            logger.info(f"[BUY_ORDERS] {ticker}: 매수 주문 실행 시도")
             trade = self._execute_buy_trade(ticker, portfolio, market_data[ticker], date)
             if trade:
                 trades.append(trade)
-                logger.info(f"[BUY_ORDERS] ✓ {ticker}: 매수 성공 (가격: {trade.price}, 수량: {trade.quantity})")
-            else:
-                logger.warning(f"[BUY_ORDERS] ✗ {ticker}: 매수 실패")
 
-        logger.info(f"[BUY_ORDERS] 총 매수 체결: {len(trades)}건")
         return trades
 
     def _execute_buy_trade(self, ticker: str, portfolio: Portfolio,
@@ -863,20 +814,27 @@ class DailyBacktestService:
         )
 
     def _print_daily_summary(self, date: pd.Timestamp, portfolio: Portfolio, day_result: DayTradingResult):
-        """Print daily summary (preserved from original output format)"""
+        """
+        Print daily summary with Balance, Win/Loss Ratio, and Profit/Loss Ratio
+        날짜별 Balance 및 Win/Loss Ratio와 손익비 출력
+        """
         win_loss_ratio = self._calculate_win_loss_ratio(portfolio)
-        win_loss_gain = self._calculate_win_loss_gain(portfolio)
+        profit_loss_ratio = self._calculate_win_loss_gain(portfolio)
 
         balance_str = f"{self.COLOR}{portfolio.total_value:.2f}{self.RESET}"
         cash_ratio_str = f"{self.COLOR3}{portfolio.cash_ratio:.2f}{self.RESET}"
 
         # numpy.datetime64를 pandas.Timestamp로 변환
         date_str = pd.Timestamp(date).strftime('%Y-%m-%d')
-        print(f"{date_str} - Trades: {len(day_result.trades)}, "
-              f"W/L Ratio: {self.CODE}{win_loss_ratio:.2f}{self.RESET}, "
-              f"W/L Gain: {self.NAME}{win_loss_gain:.2f}{self.RESET}, "
-              f"Positions: {portfolio.position_count}/{self.config.max_positions}, "
-              f"Balance: {balance_str}, Cash: {cash_ratio_str}%, "
+
+        # 날짜별 Balance, Win/Loss Ratio, 손익비 출력
+        print(f"{date_str} | "
+              f"Balance: {balance_str} | "
+              f"W/L Ratio: {self.CODE}{win_loss_ratio:.2%}{self.RESET} | "
+              f"Profit/Loss Ratio: {self.NAME}{profit_loss_ratio:.2f}{self.RESET} | "
+              f"Positions: {portfolio.position_count}/{self.config.max_positions} | "
+              f"Cash: {cash_ratio_str}% | "
+              f"Trades: {len(day_result.trades)} | "
               f"Candidates: {len(day_result.buy_candidates)}")
 
     def _calculate_win_loss_ratio(self, portfolio: Portfolio) -> float:

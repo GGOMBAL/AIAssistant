@@ -1,0 +1,13 @@
+end_time: '2025-10-10T02:03:16.195621'
+interactions: []
+session_id: '20251010_020313'
+start_time: null
+statistics:
+  agents_used: []
+  average_duration_ms: 0
+  errors_occurred: 0
+  prompts_sent: 0
+  responses_received: 0
+  total_duration_ms: 0.0
+  total_interactions: 0
+  total_tokens: 0

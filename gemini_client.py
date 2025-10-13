@@ -21,9 +21,18 @@ class GeminiClient:
 
         # Combine system prompt and user prompt
         if system_prompt:
-            full_prompt = f"System: {system_prompt}\n\nUser: {prompt}"
+            full_prompt = f"{system_prompt}\n\n{prompt}"
         else:
             full_prompt = prompt
+
+        # Validate prompt length
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[Gemini] Prompt length: {len(full_prompt)} chars")
+
+        if len(full_prompt.strip()) < 10:
+            logger.error(f"[Gemini] Prompt too short: {len(full_prompt)} chars")
+            return "Error: Prompt is too short to generate a meaningful response"
 
         url = f"{self.base_url}/models/{self.model}:generateContent"
         params = {"key": self.api_key}
@@ -67,36 +76,49 @@ class GeminiClient:
                 async with session.post(url, json=payload, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        print(f"[DEBUG] Full Gemini response: {json.dumps(data, indent=2, ensure_ascii=False)}")
+
+                        # Debug: 전체 응답 구조 로깅
+                        logger.info(f"[Gemini] Response keys: {list(data.keys())}")
 
                         candidates = data.get("candidates", [])
+                        logger.info(f"[Gemini] Candidates count: {len(candidates)}")
+
                         if candidates:
                             candidate = candidates[0]
-                            print(f"[DEBUG] First candidate: {json.dumps(candidate, indent=2, ensure_ascii=False)}")
-
-                            # Check finish reason
-                            finish_reason = candidate.get("finishReason")
-                            if finish_reason:
-                                print(f"[DEBUG] Finish reason: {finish_reason}")
+                            logger.info(f"[Gemini] Candidate keys: {list(candidate.keys())}")
 
                             content = candidate.get("content", {})
+                            logger.info(f"[Gemini] Content: {content}")
+
                             parts = content.get("parts", [])
+                            logger.info(f"[Gemini] Parts count: {len(parts)}")
+
                             if parts:
                                 response_text = parts[0].get("text", "").strip()
+                                logger.info(f"[Gemini] Response text length: {len(response_text)}")
                                 if response_text:
                                     return response_text
                                 else:
-                                    return "Gemini returned empty text content"
+                                    logger.error("[Gemini] Empty text content")
+                                    logger.error(f"[Gemini] Full content structure: {content}")
+                                    return "Error: Gemini returned empty text. This may indicate the prompt was too complex or unclear."
                             else:
-                                return f"Gemini returned no parts in content. Content: {json.dumps(content, indent=2, ensure_ascii=False)}"
+                                logger.error(f"[Gemini] No parts in content. Content: {content}")
+                                logger.error(f"[Gemini] Finish reason: {candidate.get('finishReason', 'unknown')}")
+                                logger.error(f"[Gemini] Prompt preview: {full_prompt[:200]}...")
+                                return f"Error: Gemini API returned no content. The prompt may be too complex, filtered by safety settings, or missing required context."
                         else:
-                            return f"Gemini returned no candidates. Full response: {json.dumps(data, indent=2, ensure_ascii=False)}"
+                            logger.error(f"[Gemini] No candidates. Response: {data}")
+                            return f"Gemini returned no candidates."
                     else:
                         error_text = await response.text()
-                        print(f"[DEBUG] API Error: Status {response.status}, Response: {error_text}")
+                        logger.error(f"[Gemini] API Error {response.status}: {error_text}")
                         return f"Gemini API Error: {error_text}"
 
         except Exception as e:
+            logger.error(f"[Gemini] Exception: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return f"Request failed: {str(e)}"
 
     async def agent_response(self, agent_name: str, task: str, system_prompt: str) -> str:
@@ -116,14 +138,5 @@ If the question is in English, please respond in English.
 Make sure to provide a complete and comprehensive answer.
 """
 
-        print(f"[DEBUG] Sending to Gemini for {agent_name}:")
-        print(f"[DEBUG] Prompt length: {len(enhanced_prompt)}")
-        print(f"[DEBUG] First 200 chars: {enhanced_prompt[:200]}...")
-
         response = await self.generate_response(enhanced_prompt.strip())
-
-        print(f"[DEBUG] Received response for {agent_name}:")
-        print(f"[DEBUG] Response length: {len(response)}")
-        print(f"[DEBUG] Response starts with: {response[:100]}...")
-
         return response

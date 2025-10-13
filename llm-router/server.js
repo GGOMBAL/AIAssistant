@@ -103,6 +103,12 @@ const modelProviders = {
     max_tokens: 200000,
     simulate: true
   },
+  'claude-3-5-sonnet-20241022': {
+    provider: 'anthropic',
+    cost_per_1k_tokens: 0.003,
+    max_tokens: 200000,
+    simulate: true
+  },
   'claude-3-sonnet-20240229': {
     provider: 'anthropic',
     cost_per_1k_tokens: 0.003,
@@ -157,6 +163,7 @@ async function callLLMModel(model, message, preferences = {}) {
     // Simulate processing time based on model
     const processingTime = {
       'claude-3-opus-20240229': 2000 + Math.random() * 1000,
+      'claude-3-5-sonnet-20241022': 1200 + Math.random() * 500,
       'claude-3-sonnet-20240229': 1000 + Math.random() * 500,
       'claude-3-haiku-20240307': 500 + Math.random() * 300,
       'gemini-pro': 800 + Math.random() * 400
@@ -172,6 +179,7 @@ async function callLLMModel(model, message, preferences = {}) {
     // Simulate model-specific response
     const responses = {
       'claude-3-opus-20240229': `High-quality detailed analysis: ${message.substring(0, 100)}... [Comprehensive response with deep insights]`,
+      'claude-3-5-sonnet-20241022': `Advanced analysis (3.5): ${message.substring(0, 100)}... [Enhanced reasoning and accuracy]`,
       'claude-3-sonnet-20240229': `Balanced analysis: ${message.substring(0, 100)}... [Well-structured response]`,
       'claude-3-haiku-20240307': `Quick response: ${message.substring(0, 50)}... [Concise answer]`,
       'gemini-pro': `Efficient processing: ${message.substring(0, 100)}... [Large-scale optimized response]`

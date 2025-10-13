@@ -1,0 +1,103 @@
+# RUN AGENT Configuration
+# 최상위 실행 Agent 설정
+
+agent:
+  name: "RUN_AGENT"
+  version: "1.0.0"
+  description: "Multi-Agent System Main Controller"
+
+  # Agent 역할
+  role: |
+    1. 전체 Agent 라이프사이클 관리
+    2. Orchestrator와 협업하여 작업 조율
+    3. Agent 간 통신 및 데이터 흐름 제어
+    4. 시스템 상태 모니터링 및 에러 처리
+
+  # 관리하는 하위 Agent들
+  managed_agents:
+    - name: "HELPER_AGENT"
+      type: "helper"
+      router: "project.router.helper_agent_router.HelperAgentRouter"
+
+    - name: "DATABASE_AGENT"
+      type: "database"
+      router: "project.router.data_agent_router.DataAgentRouter"
+
+    - name: "STRATEGY_AGENT"
+      type: "strategy"
+      router: "project.router.strategy_agent_router.StrategyAgentRouter"
+
+    - name: "SERVICE_AGENT"
+      type: "service"
+      router: "project.router.service_agent_router.ServiceAgentRouter"
+
+# 실행 모드
+execution_modes:
+  backtest:
+    enabled: true
+    default_period_days: 365
+    max_symbols: 500
+
+  trading:
+    enabled: false  # 아직 미구현
+    market_hours_only: true
+
+  analysis:
+    enabled: true
+    max_symbols: 1000
+
+# 로깅 설정
+logging:
+  level: "INFO"
+  file: "run_agent.log"
+  format: "%(asctime)s - [%(name)s] %(levelname)s - %(message)s"
+
+  # Agent별 로그 레벨
+  agent_levels:
+    RUN_AGENT: "INFO"
+    ORCHESTRATOR: "INFO"
+    HELPER_AGENT: "WARNING"
+    DATABASE_AGENT: "WARNING"
+    STRATEGY_AGENT: "INFO"
+    SERVICE_AGENT: "INFO"
+
+# 성능 설정
+performance:
+  # 병렬 처리
+  enable_parallel: true
+  max_workers: 4
+
+  # 타임아웃
+  agent_timeout_seconds: 300
+  data_load_timeout_seconds: 600
+
+  # 메모리 관리
+  max_memory_gb: 8
+  enable_gc: true
+
+# 에러 처리
+error_handling:
+  # Agent 에러 시 재시도
+  retry_on_error: true
+  max_retries: 3
+  retry_delay_seconds: 5
+
+  # Failover
+  enable_failover: true
+
+  # 알림
+  send_error_notifications: false
+  notification_channels: []
+
+# 모니터링
+monitoring:
+  enable_status_tracking: true
+  status_update_interval_seconds: 10
+
+  # 메트릭 수집
+  collect_metrics: true
+  metrics_output: "storage/metrics/"
+
+  # Health check
+  enable_health_check: true
+  health_check_interval_seconds: 30

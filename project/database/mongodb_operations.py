@@ -26,15 +26,17 @@ class MongoDBOperations:
     def __init__(self, db_address: str = "MONGODB_LOCAL"):
         """
         Initialize MongoDB Operations
-        
+
         Args:
             db_address: Database address identifier in config
         """
         self.db_address = db_address
         self.stock_info = None
         self._load_config()
-        
-        logger.info(f"Initialized MongoDBOperations with address: {db_address}")
+
+        # Single persistent connection (reuse throughout lifecycle)
+        self._client = None
+        self._connect()
     
     def _load_config(self):
         """Load database configuration from myStockInfo.yaml"""
@@ -46,7 +48,6 @@ class MongoDBOperations:
             if os.path.exists(config_path):
                 with open(config_path, 'r', encoding='UTF-8') as f:
                     self.stock_info = yaml.load(f, Loader=yaml.FullLoader)
-                logger.info("Loaded database configuration from myStockInfo.yaml")
             else:
                 logger.warning(f"Configuration file not found at {config_path}")
                 # Create default configuration structure
@@ -67,19 +68,43 @@ class MongoDBOperations:
                 "MONGODB_PW": "password"
             }
     
-    def _get_connection(self) -> pymongo.MongoClient:
-        """Get MongoDB connection"""
+    def _connect(self):
+        """Establish single persistent MongoDB connection"""
         try:
-            connection = pymongo.MongoClient(
-                host=self.stock_info[self.db_address], 
-                port=self.stock_info["MONGODB_PORT"],
-                username=self.stock_info["MONGODB_ID"],
-                password=self.stock_info["MONGODB_PW"]
-            )
-            return connection
+            if self._client is None:
+                self._client = pymongo.MongoClient(
+                    host=self.stock_info[self.db_address],
+                    port=self.stock_info["MONGODB_PORT"],
+                    username=self.stock_info["MONGODB_ID"],
+                    password=self.stock_info["MONGODB_PW"],
+                    maxPoolSize=10,
+                    minPoolSize=1,
+                    maxIdleTimeMS=10000,
+                    connectTimeoutMS=20000,
+                    serverSelectionTimeoutMS=20000,
+                    waitQueueTimeoutMS=5000
+                )
+                logger.info(f"MongoDB connection established to {self.stock_info[self.db_address]}")
         except Exception as e:
             logger.error(f"Failed to connect to MongoDB: {e}")
             raise
+
+    def _get_connection(self) -> pymongo.MongoClient:
+        """Get the persistent MongoDB connection (for backward compatibility)"""
+        if self._client is None:
+            self._connect()
+        return self._client
+
+    def close(self):
+        """Close MongoDB connection"""
+        if self._client is not None:
+            self._client.close()
+            self._client = None
+            logger.info("MongoDB connection closed")
+
+    def __del__(self):
+        """Cleanup on deletion"""
+        self.close()
     
     def make_stock_db(self, db_name: str, df_data: dict, stock: str) -> bool:
         """
@@ -103,9 +128,7 @@ class MongoDBOperations:
             
             # Insert document into MongoDB
             collection.insert_one(df_data)
-            
-            conn.close()
-            logger.info(f"Successfully created stock DB entry for {stock} in {db_name}")
+
             return True
             
         except Exception as e:
@@ -158,55 +181,51 @@ class MongoDBOperations:
                 else:
                     # Insert single document
                     collection.insert_one(df_data)
-                
-                logger.info(f"Updated stock DB for {stock} in {db_name}")
-            else:
-                logger.info(f"Data for {stock} on {today.date()} already exists")
-            
-            conn.close()
             return True
             
         except Exception as e:
             logger.error(f"Error updating stock DB for {stock}: {e}")
             return False
     
-    def execute_query(self, db_name: str, collection_name: str, query: dict = None, 
+    def execute_query(self, db_name: str, collection_name: str, query: dict = None,
                      projection: dict = None, limit: int = None) -> pd.DataFrame:
         """
         Execute MongoDB query and return DataFrame
         Based on refer/Database/CalMongoDB.py ExecuteSql method
-        
+
         Args:
             db_name: Database name
             collection_name: Collection name
             query: Query filter
             projection: Field projection
             limit: Result limit
-            
+
         Returns:
             pd.DataFrame: Query results
         """
         try:
+            # Validate collection name
+            if not collection_name or not collection_name.strip():
+                logger.error(f"Error executing query on {db_name}.: collection names cannot be empty")
+                return pd.DataFrame()
+
             conn = self._get_connection()
             db = conn[db_name]
             collection = db[collection_name]
-            
+
             # Build query
             if query is None:
                 query = {}
-            
+
             cursor = collection.find(query, projection)
-            
+
             if limit:
                 cursor = cursor.limit(limit)
-            
+
             # Convert to DataFrame
             data = pd.DataFrame(list(cursor))
-            
-            conn.close()
-            logger.info(f"Successfully executed query on {db_name}.{collection_name}")
             return data
-            
+
         except Exception as e:
             logger.error(f"Error executing query on {db_name}.{collection_name}: {e}")
             return pd.DataFrame()
@@ -231,14 +250,9 @@ class MongoDBOperations:
             # Get latest document
             latest_doc = collection.find().sort(date_field, -1).limit(1)
             result = list(latest_doc)
-            
-            conn.close()
-            
             if result:
-                logger.info(f"Retrieved latest data from {db_name}.{collection_name}")
                 return result[0]
             else:
-                logger.warning(f"No data found in {db_name}.{collection_name}")
                 return {}
                 
         except Exception as e:
@@ -263,11 +277,7 @@ class MongoDBOperations:
             collection = db[collection_name]
             
             result = collection.find_one(query)
-            conn.close()
-            
-            exists = result is not None
-            logger.info(f"Data exists check for {db_name}.{collection_name}: {exists}")
-            return exists
+            return result is not None
             
         except Exception as e:
             logger.error(f"Error checking data existence in {db_name}.{collection_name}: {e}")
@@ -288,9 +298,6 @@ class MongoDBOperations:
             db = conn[db_name]
             
             collections = db.list_collection_names()
-            conn.close()
-            
-            logger.info(f"Retrieved {len(collections)} collections from {db_name}")
             return collections
             
         except Exception as e:
@@ -313,9 +320,6 @@ class MongoDBOperations:
             db = conn[db_name]
             
             db[collection_name].drop()
-            conn.close()
-            
-            logger.info(f"Successfully deleted collection {collection_name} from {db_name}")
             return True
             
         except Exception as e:
@@ -338,9 +342,6 @@ class MongoDBOperations:
             
             stats = db.command("dbStats")
             collections = db.list_collection_names()
-            
-            conn.close()
-            
             result = {
                 'database_name': db_name,
                 'collections_count': len(collections),
@@ -350,8 +351,7 @@ class MongoDBOperations:
                 'indexes': stats.get('indexes', 0),
                 'objects': stats.get('objects', 0)
             }
-            
-            logger.info(f"Retrieved stats for database {db_name}")
+
             return result
             
         except Exception as e:
@@ -373,9 +373,6 @@ class MongoDBOperations:
             
             # Get server info
             server_info = conn.server_info()
-            
-            conn.close()
-            
             return {
                 'connected': True,
                 'server_version': server_info.get('version'),

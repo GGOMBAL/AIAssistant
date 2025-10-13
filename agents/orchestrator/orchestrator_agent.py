@@ -100,6 +100,11 @@ class OrchestratorAgent:
             self.agents['helper'] = HelperAgent()
             self._log("[오케스트레이터] Helper Agent 초기화 완료")
 
+            # RUN Agent 초기화
+            from run_agent import RunAgent
+            self.agents['run'] = RunAgent()
+            self._log("[오케스트레이터] RUN Agent 초기화 완료")
+
         except ImportError as e:
             self._log(f"[오케스트레이터] 에이전트 초기화 실패: {e}")
             self._log("[오케스트레이터] 기본 에이전트로 대체 실행")

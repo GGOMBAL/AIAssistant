@@ -240,31 +240,91 @@ class AccountAnalysisService(BaseService, IAccountAnalysisService):
                 await asyncio.sleep(5)
 
     async def _fetch_account_balance(self) -> None:
-        """계좌 잔고 조회 (시뮬레이션)"""
+        """계좌 잔고 조회 (실제 KIS API)"""
         try:
-            # 실제로는 KIS API 잔고 조회
-            # 시뮬레이션 데이터
-            import random
+            # main_auto_trade.py의 get_account_data_from_helper 함수 임포트 및 호출
+            import sys
+            import os
+            from pathlib import Path
 
-            base_balance = {
-                'total_value': 1000000.0,
-                'cash': 200000.0,
-                'stock_value': 800000.0,
-                'buying_power': 150000.0,
-                'day_pnl': random.uniform(-5000, 10000),
-                'total_pnl': random.uniform(-20000, 100000)
-            }
+            # main_auto_trade.py의 get_account_data_from_helper 함수 사용
+            project_root = Path(__file__).parent.parent.parent
+            sys.path.append(str(project_root))
 
-            # 약간의 변동 추가
-            for key in ['total_value', 'stock_value', 'day_pnl']:
-                if key in base_balance:
-                    variation = random.uniform(-0.02, 0.02)
-                    base_balance[key] *= (1 + variation)
+            try:
+                from main_auto_trade import get_account_data_from_helper
 
-            self.account_balance = base_balance
+                # 실제 계좌 데이터 조회
+                account_data = await get_account_data_from_helper()
+
+                if account_data and account_data.get('balance'):
+                    balance = account_data['balance']
+
+                    # USD equivalent로 통합된 잔고 정보 사용
+                    if balance.get('currency') == 'USD_EQUIVALENT':
+                        self.account_balance = {
+                            'total_value': balance.get('total_balance', 0),
+                            'cash': balance.get('cash_balance', 0),
+                            'stock_value': balance.get('stock_value', 0),
+                            'buying_power': balance.get('cash_balance', 0),  # 현금 잔고를 매수력으로 사용
+                            'day_pnl': balance.get('revenue', 0),  # revenue를 일간 손익으로 사용
+                            'total_pnl': balance.get('revenue', 0)
+                        }
+
+                        # 실제 보유 종목 데이터도 저장
+                        if account_data.get('holdings'):
+                            self.set_real_holdings_data(account_data['holdings'])
+
+                        self.logger.info(f"[REAL_API] 계좌 데이터 조회 성공 - 총자산: ${self.account_balance['total_value']:,.2f}")
+                    else:
+                        # 단일 통화 잔고
+                        self.account_balance = {
+                            'total_value': balance.get('total_balance', 0),
+                            'cash': balance.get('cash_balance', 0),
+                            'stock_value': balance.get('stock_value', 0),
+                            'buying_power': balance.get('cash_balance', 0),
+                            'day_pnl': balance.get('revenue', 0),
+                            'total_pnl': balance.get('revenue', 0)
+                        }
+
+                        if account_data.get('holdings'):
+                            self.set_real_holdings_data(account_data['holdings'])
+
+                        self.logger.info(f"[REAL_API] 계좌 데이터 조회 성공 - 총자산: ${self.account_balance['total_value']:,.2f}")
+                else:
+                    self.logger.warning("계좌 데이터 조회 결과가 비어있습니다. 기본값을 사용합니다.")
+                    self.account_balance = {
+                        'total_value': 0.0,
+                        'cash': 0.0,
+                        'stock_value': 0.0,
+                        'buying_power': 0.0,
+                        'day_pnl': 0.0,
+                        'total_pnl': 0.0
+                    }
+
+            except ImportError as e:
+                self.logger.error(f"main_auto_trade 모듈 임포트 실패: {e}")
+                # 폴백: 빈 잔고로 설정
+                self.account_balance = {
+                    'total_value': 0.0,
+                    'cash': 0.0,
+                    'stock_value': 0.0,
+                    'buying_power': 0.0,
+                    'day_pnl': 0.0,
+                    'total_pnl': 0.0
+                }
 
         except Exception as e:
             self.log_error(f"계좌 잔고 조회 실패: {e}")
+            # 에러 시 빈 잔고로 설정
+            self.account_balance = {
+                'total_value': 0.0,
+                'cash': 0.0,
+                'stock_value': 0.0,
+                'buying_power': 0.0,
+                'day_pnl': 0.0,
+                'total_pnl': 0.0
+            }
 
     async def _fetch_positions(self) -> None:
         """보유 포지션 조회 (실제 데이터만 사용)"""

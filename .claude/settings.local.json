@@ -1,15 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(pip install:*)",
-      "Bash(findstr:*)",
-      "Bash(timeout:*)",
-      "Bash(if not exist jsontoken mkdir jsontoken)",
-      "Bash(python:*)",
-      "Bash(if exist failed_symbols_cache.json del failed_symbols_cache.json)",
-      "Bash(grep:*)",
-      "Bash(find:*)",
-      "Bash(git add:*)"
+      "Bash(git commit:*)",
+      "Bash(tree:*)"
     ],
     "deny": [],
     "ask": []

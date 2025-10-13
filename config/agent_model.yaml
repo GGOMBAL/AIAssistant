@@ -103,6 +103,16 @@ agents:
       - "notification_services"
     model_selection_strategy: "cost_efficiency"
 
+  run_agent:
+    primary_model: "gemini_flash"
+    fallback_model: "claude_haiku"
+    use_cases:
+      - "file_execution"
+      - "script_running"
+      - "process_management"
+      - "command_execution"
+    model_selection_strategy: "efficiency_first"
+
 # 모델 선택 전략 정의
 selection_strategies:
   quality_first:
@@ -183,9 +193,10 @@ usage_limits:
   agent_quotas:
     orchestrator: 30%  # of total budget
     data_agent: 25%
-    strategy_agent: 30%
+    strategy_agent: 25%
     service_agent: 10%
     helper_agent: 5%
+    run_agent: 5%
 
 # 모델 성능 최적화
 optimization:

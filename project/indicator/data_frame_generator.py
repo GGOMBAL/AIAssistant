@@ -20,8 +20,8 @@ sys.path.append(project_root)
 
 # Import Database Layer components
 try:
-    from Project.database.mongodb_operations import MongoDBOperations
-    from Project.database.database_name_calculator import calculate_database_name
+    from project.database.mongodb_operations import MongoDBOperations
+    from project.database.database_name_calculator import calculate_database_name
     DATABASE_AVAILABLE = True
 except ImportError:
     DATABASE_AVAILABLE = False
@@ -39,7 +39,7 @@ class DataFrameGenerator:
                  start_day: datetime = None, end_day: datetime = None):
         """
         Initialize DataFrameGenerator
-        
+
         Args:
             universe: List of stock symbols
             market: Market identifier
@@ -63,15 +63,25 @@ class DataFrameGenerator:
         self.start_day = start_day
         self.data_start_day = start_day - timedelta(days=365*3)  # 3 years of historical data
         self.end_day = end_day
-        self.universe = universe
-        
+
+        # Clean and validate universe
+        self.universe = [s.strip() for s in universe if s and s.strip()]
+
+        if len(self.universe) != len(universe):
+            logger.warning(f"Filtered {len(universe) - len(self.universe)} invalid symbols from universe")
+
         # Initialize data frames
         self.df_W = {}   # Weekly data
-        self.df_RS = {}  # Relative strength data  
+        self.df_RS = {}  # Relative strength data
         self.df_D = {}   # Daily data
         self.df_E = {}   # Earnings data (US only)
         self.df_F = {}   # Fundamental data (US only)
-        
+
+        # Single MongoDB connection for all operations (reuse connection)
+        self.db = None
+        if DATABASE_AVAILABLE:
+            self.db = MongoDBOperations(db_address="MONGODB_LOCAL")
+
         logger.info(f"Initialized DataFrameGenerator for {area} market with {len(universe)} symbols")
     
     def read_database_task(self, market: str, area: str, data_type: str, 
@@ -93,16 +103,13 @@ class DataFrameGenerator:
             Tuple of (data_type, dataframe_dict, updated_universe)
         """
         try:
-            if DATABASE_AVAILABLE:
-                # Use Database Layer (same as refer implementation)
-                logger.info(f"Reading {data_type} data from MongoDB for {area} market")
-
-                db = MongoDBOperations(DB_address="MONGODB_LOCAL")
+            if DATABASE_AVAILABLE and self.db is not None:
+                # Use existing Database connection (reuse connection)
                 database_name = calculate_database_name(market, area, data_type, "Stock")
 
                 # Call ReadDataBase method (equivalent to refer implementation)
                 df_dict, updated_universe = self._read_from_mongodb(
-                    db, universe, market, area, database_name, data_start_day, end_day
+                    self.db, universe, market, area, database_name, data_start_day, end_day
                 )
 
                 return data_type, df_dict, updated_universe
@@ -110,7 +117,7 @@ class DataFrameGenerator:
                 # Use Helper Layer to get real market data when database is not available
                 logger.info(f"Database not available, using Helper Layer for {data_type} data")
                 return self._get_helper_data(data_type, universe, data_start_day, end_day)
-                
+
         except Exception as e:
             logger.error(f"Error reading {data_type} data: {e}")
             # Return empty structure on error
@@ -137,14 +144,21 @@ class DataFrameGenerator:
         """
         df_dict = {}
         updated_universe = []
-        
+
         try:
-            for symbol in universe:
+            # Filter out empty or invalid symbols
+            valid_symbols = [s for s in universe if s and s.strip()]
+
+            for symbol in valid_symbols:
                 try:
+                    # Skip if symbol is empty after strip
+                    if not symbol.strip():
+                        continue
+
                     # Query data for each symbol
                     df = db.execute_query(
                         db_name=database_name,
-                        collection_name=symbol,
+                        collection_name=symbol.strip(),
                         query={
                             'Date': {
                                 '$gte': data_start_day,
@@ -152,13 +166,13 @@ class DataFrameGenerator:
                             }
                         }
                     )
-                    
+
                     if not df.empty:
                         df_dict[symbol] = df
                         updated_universe.append(symbol)
-                        
+
                 except Exception as e:
-                    logger.warning(f"Error reading {symbol} from {database_name}: {e}")
+                    logger.debug(f"Error reading {symbol} from {database_name}: {e}")
                     continue
                     
             logger.info(f"Successfully read data for {len(updated_universe)} symbols from {database_name}")
@@ -492,30 +506,83 @@ class DataFrameGenerator:
     def _post_process_dataframes(self) -> None:
         """Remove duplicates and apply post-processing (based on refer logic)"""
         logger.info("Post-processing dataframes...")
-        
-        # Remove duplicates from all dataframes
+
+        # Remove duplicates and rename columns
         for stock in self.universe:
             try:
+                # Process Weekly data
                 if stock in self.df_W:
                     self.df_W[stock] = self.df_W[stock][~self.df_W[stock].index.duplicated()]
-                    
+                    # Rename columns: open → Wopen, high → Whigh, low → Wlow, close → Wclose
+                    rename_map = {}
+                    if 'open' in self.df_W[stock].columns:
+                        rename_map['open'] = 'Wopen'
+                    if 'high' in self.df_W[stock].columns:
+                        rename_map['high'] = 'Whigh'
+                    if 'low' in self.df_W[stock].columns:
+                        rename_map['low'] = 'Wlow'
+                    if 'close' in self.df_W[stock].columns:
+                        rename_map['close'] = 'Wclose'
+                    if rename_map:
+                        self.df_W[stock].rename(columns=rename_map, inplace=True)
+
+                    # Calculate 52-week high/low
+                    df = self.df_W[stock]
+                    if 'Whigh' in df.columns:
+                        df['52_H'] = df['Whigh'].rolling(window=52, min_periods=1).max()
+                        df['1Year_H'] = df['52_H']  # Alias
+                    if 'Wlow' in df.columns:
+                        df['52_L'] = df['Wlow'].rolling(window=52, min_periods=1).min()
+                        df['1Year_L'] = df['52_L']  # Alias
+
+                # Process RS data
                 if stock in self.df_RS:
                     self.df_RS[stock] = self.df_RS[stock][~self.df_RS[stock].index.duplicated()]
-                    
+
+                # Process Daily data
                 if stock in self.df_D:
                     self.df_D[stock] = self.df_D[stock][~self.df_D[stock].index.duplicated()]
-                
+                    # Rename columns: ad_open → Dopen, ad_high → Dhigh, ad_low → Dlow, ad_close → Dclose
+                    rename_map = {}
+                    if 'ad_open' in self.df_D[stock].columns:
+                        rename_map['ad_open'] = 'Dopen'
+                    if 'ad_high' in self.df_D[stock].columns:
+                        rename_map['ad_high'] = 'Dhigh'
+                    if 'ad_low' in self.df_D[stock].columns:
+                        rename_map['ad_low'] = 'Dlow'
+                    if 'ad_close' in self.df_D[stock].columns:
+                        rename_map['ad_close'] = 'Dclose'
+                    if rename_map:
+                        self.df_D[stock].rename(columns=rename_map, inplace=True)
+
+                    # Calculate technical indicators for Daily data
+                    df = self.df_D[stock]
+                    if 'Dclose' in df.columns:
+                        # SMA calculations
+                        df['SMA20'] = df['Dclose'].rolling(window=20, min_periods=1).mean()
+                        df['SMA50'] = df['Dclose'].rolling(window=50, min_periods=1).mean()
+                        df['SMA200'] = df['Dclose'].rolling(window=200, min_periods=1).mean()
+
+                        # ADR (Average Daily Range) calculation
+                        if 'Dhigh' in df.columns and 'Dlow' in df.columns:
+                            df['Daily_Range'] = ((df['Dhigh'] - df['Dlow']) / df['Dlow']) * 100
+                            df['ADR'] = df['Daily_Range'].rolling(window=20, min_periods=1).mean()
+
+                        # Highest/Lowest calculations
+                        df['Highest_20'] = df['Dhigh'].rolling(window=20, min_periods=1).max() if 'Dhigh' in df.columns else pd.NA
+                        df['Lowest_20'] = df['Dlow'].rolling(window=20, min_periods=1).min() if 'Dlow' in df.columns else pd.NA
+
                 # US-specific processing
                 if self.area == 'US':
                     if stock in self.df_E:
                         self.df_E[stock] = self.df_E[stock][~self.df_E[stock].index.duplicated()]
-                    
+
                     if stock in self.df_F:
                         self.df_F[stock] = self.df_F[stock][~self.df_F[stock].index.duplicated()]
-                        
+
             except Exception as e:
                 logger.error(f"Error processing {stock}: {e}")
-        
+
         # Reindex and merge fundamental data for US market (based on refer logic)
         if self.area == 'US':
             self._process_fundamental_data()

@@ -180,6 +180,132 @@ class KISUSHelper:
             logger.error(f"US KIS authentication error: {e}")
             return False
     
+    def get_multi_currency_balance(self) -> Dict[str, Any]:
+        """Get multi-currency account balance including USD and HKD"""
+        try:
+            if not self.token:
+                if not self.make_token():
+                    raise Exception("Authentication failed")
+
+            import time
+            time.sleep(0.2)
+
+            # API path and URL setup
+            path = "uapi/overseas-stock/v1/trading/inquire-present-balance"
+            url = f"{self.base_url}/{path}"
+
+            # Transaction ID based on account type
+            tr_id = "CTRP6504R"  # Real account
+            if self.config.get('is_virtual', False):
+                tr_id = "VTRP6504R"  # Virtual account
+
+            # Request parameters
+            params = {
+                "CANO": self.account_no,
+                "ACNT_PRDT_CD": self.product_code,
+                "WCRC_FRCR_DVSN_CD": "02",
+                "NATN_CD": "840",  # US country code
+                "TR_MKET_CD": "00",  # Market code
+                "INQR_DVSN_CD": "00"  # Inquiry division
+            }
+
+            # Request headers
+            headers = {
+                "Content-Type": "application/json",
+                "authorization": f"Bearer {self.token}",
+                "appKey": self.app_key,
+                "appSecret": self.app_secret,
+                "tr_id": tr_id,
+                "custtype": "P"
+            }
+
+            # Make request
+            response = requests.get(url, headers=headers, params=params)
+
+            logger.info(f"[DEBUG] Balance API Response Status: {response.status_code}")
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"[DEBUG] Multi-Currency Balance Response: rt_cd={result.get('rt_cd')}")
+
+                if result.get("rt_cd") == '0':
+                    # Parse all currency data
+                    output2 = result.get('output2', [])
+                    output3 = result.get('output3', {})
+
+                    # Get stock holdings for accurate calculation
+                    my_stocks = self.get_holdings()
+
+                    # Calculate totals
+                    currencies = {}
+                    total_usd_equivalent = 0
+                    default_exchange_rate = 1400  # KRW to USD base rate
+
+                    for currency_data in output2:
+                        currency_code = currency_data.get('crcy_cd', '')
+                        logger.info(f"[DEBUG] Processing currency: {currency_code}")
+
+                        if currency_code in ['USD', 'HKD']:
+                            # Calculate available cash
+                            frcr_dncl_amt_2 = float(currency_data.get('frcr_dncl_amt_2', 0))
+                            frcr_buy_amt_smtl = float(currency_data.get('frcr_buy_amt_smtl', 0))
+                            frcr_sll_amt_smtl = float(currency_data.get('frcr_sll_amt_smtl', 0))
+
+                            available_cash = frcr_dncl_amt_2 - frcr_buy_amt_smtl + frcr_sll_amt_smtl
+                            exchange_rate = float(currency_data.get('frst_bltn_exrt', default_exchange_rate))
+
+                            # Stock value for this currency
+                            currency_stocks = [s for s in my_stocks if s.get('currency') == currency_code]
+                            stock_original_total = sum(float(s.get('original_value', 0)) for s in currency_stocks)
+                            stock_current_total = sum(float(s.get('market_value', 0)) for s in currency_stocks)
+
+                            currencies[currency_code] = {
+                                'cash_balance': available_cash,
+                                'stock_value': stock_current_total,
+                                'stock_original_value': stock_original_total,
+                                'stock_profit_loss': stock_current_total - stock_original_total,
+                                'total_balance': available_cash + stock_current_total,
+                                'exchange_rate': exchange_rate,
+                                'currency_name': currency_data.get('crcy_cd_name', currency_code)
+                            }
+
+                            # Convert to USD equivalent for total calculation
+                            if currency_code == 'USD':
+                                usd_equivalent = available_cash + stock_current_total
+                            elif currency_code == 'HKD':
+                                # HKD to USD conversion (typical rate ~0.13)
+                                usd_equivalent = (available_cash + stock_current_total) * 0.13
+                            else:
+                                usd_equivalent = (available_cash + stock_current_total) / exchange_rate
+
+                            total_usd_equivalent += usd_equivalent
+
+                            logger.info(f"[DEBUG] {currency_code}: Cash={available_cash}, Stock={stock_current_total}, Total={available_cash + stock_current_total}")
+
+                    # Calculate combined totals
+                    total_cash_usd = sum(curr.get('cash_balance', 0) * (1 if code == 'USD' else 0.13 if code == 'HKD' else 1/curr.get('exchange_rate', 1400)) for code, curr in currencies.items())
+                    total_stock_usd = sum(curr.get('stock_value', 0) * (1 if code == 'USD' else 0.13 if code == 'HKD' else 1/curr.get('exchange_rate', 1400)) for code, curr in currencies.items())
+                    total_profit_loss_usd = sum(curr.get('stock_profit_loss', 0) * (1 if code == 'USD' else 0.13 if code == 'HKD' else 1/curr.get('exchange_rate', 1400)) for code, curr in currencies.items())
+
+                    return {
+                        'total_balance': total_usd_equivalent,
+                        'cash_balance': total_cash_usd,
+                        'stock_value': total_stock_usd,
+                        'revenue': total_profit_loss_usd,
+                        'currency': 'USD_EQUIVALENT',
+                        'currencies': currencies,
+                        'holdings_count': len(my_stocks)
+                    }
+                else:
+                    logger.error(f"API error: {result.get('msg1', 'Unknown error')}")
+                    return {}
+            else:
+                logger.error(f"HTTP error: {response.status_code} - {response.text}")
+                return {}
+
+        except Exception as e:
+            logger.error(f"Balance inquiry failed: {e}")
+            return {}
+
     def get_balance(self, currency: str = "USD") -> Dict[str, Any]:
         """Get overseas account balance - based on reference GetBalance function"""
         try:
@@ -222,9 +348,17 @@ class KISUSHelper:
             # Make request
             response = requests.get(url, headers=headers, params=params)
 
+            logger.info(f"[DEBUG] Balance API Response Status: {response.status_code}")
             if response.status_code == 200:
                 result = response.json()
+                logger.info(f"[DEBUG] KIS API Balance Response: rt_cd={result.get('rt_cd')}, msg1={result.get('msg1', '')}")
+                logger.info(f"[DEBUG] output2 length: {len(result.get('output2', []))}")
+                logger.info(f"[DEBUG] output3 keys: {list(result.get('output3', {}).keys())}")
 
+                # output2 첫 번째 항목 디버깅
+                if result.get('output2'):
+                    first_currency = result['output2'][0]
+                    logger.info(f"[DEBUG] First currency data: {first_currency}")
                 if result.get("rt_cd") == '0':
                     # Parse balance data like reference function
                     output2 = result.get('output2', [])
@@ -241,16 +375,27 @@ class KISUSHelper:
 
                     if currency == "USD":
                         # Find USD data in output2
-                        for data in output2:
+                        logger.info(f"[DEBUG] Looking for USD in {len(output2)} currency records")
+                        usd_found = False
+                        for i, data in enumerate(output2):
+                            logger.info(f"[DEBUG] Currency {i}: {data.get('crcy_cd', 'NO_CODE')}")
                             if data.get('crcy_cd') == "USD":
+                                logger.info(f"[DEBUG] Found USD data: {data}")
                                 # Available cash (order possible amount)
-                                balance_dict['RemainMoney'] = (
-                                    float(data.get('frcr_dncl_amt_2', 0)) -
-                                    float(data.get('frcr_buy_amt_smtl', 0)) +
-                                    float(data.get('frcr_sll_amt_smtl', 0))
-                                )
+                                frcr_dncl_amt_2 = float(data.get('frcr_dncl_amt_2', 0))
+                                frcr_buy_amt_smtl = float(data.get('frcr_buy_amt_smtl', 0))
+                                frcr_sll_amt_smtl = float(data.get('frcr_sll_amt_smtl', 0))
+
+                                balance_dict['RemainMoney'] = frcr_dncl_amt_2 - frcr_buy_amt_smtl + frcr_sll_amt_smtl
                                 exchange_rate = data.get('frst_bltn_exrt', 1200)
+
+                                logger.info(f"[DEBUG] Cash calculation: {frcr_dncl_amt_2} - {frcr_buy_amt_smtl} + {frcr_sll_amt_smtl} = {balance_dict['RemainMoney']}")
+                                usd_found = True
                                 break
+
+                        if not usd_found:
+                            logger.warning("[DEBUG] USD data not found in output2")
+                            balance_dict['RemainMoney'] = 0
 
                         # Handle virtual account edge case
                         if self.config.get('is_virtual', False) and balance_dict.get('RemainMoney', 0) == 0:

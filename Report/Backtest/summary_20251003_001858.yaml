@@ -1,0 +1,52 @@
+financial_metrics:
+  error: No daily returns data available
+overview:
+  backtest_period:
+    duration_days: 2100
+    end_date: '2025-10-01'
+    start_date: '2020-01-01'
+    trading_days: 0
+  initial_settings:
+    initial_capital: $100,000,000.00
+    max_positions: 10
+    risk_per_trade: 3.0%
+    slippage_assumption: 0.20%
+  report_info:
+    generated_at: '2025-10-03T00:18:58.642800'
+    report_version: '1.0'
+    system_name: AI Assistant Multi-Agent Trading System
+  strategy_description:
+    indicators_used:
+    - RSI
+    - MACD
+    - Bollinger Bands
+    - Volume
+    name: Unified Multi-Agent Strategy
+    rebalancing_frequency: Daily
+    risk_management: Portfolio-based position sizing with stop-loss
+    type: Technical Analysis Based
+  universe:
+    symbol_list:
+    - CMS-P-B
+    - BRO
+    - MGP
+    - MDBH
+    - STRA
+    - BOOT
+    - KBAL
+    - TFIN-P
+    - AMPY
+    - QEPM
+    - CAHC
+    - SCE-P-B
+    - ADT
+    - KE
+    - PDYN
+    - GDXU
+    - BRPM-U
+    - ENVE
+    - BLDE
+    - STEC
+    symbols_traded: 0
+    total_symbols: 15049
+    truncated: true

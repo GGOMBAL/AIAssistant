@@ -265,22 +265,25 @@ class RealTimeDisplay:
             print(f"  Orders Today: {status.orders_today} (Success: {success_rate:.1f}%)")
 
     def _print_portfolio_summary(self) -> None:
-        """포트폴리오 요약 출력 (실제 계좌 데이터 기반)"""
+        """포트폴리오 요약 출력 (실제 계좌 데이터 기반, 원화 환산 포함)"""
         if not self.portfolio:
             print(f"{self.colors['gray']}Portfolio: No data{self.colors['reset']}")
             return
 
         p = self.portfolio
 
+        # 원화 환산을 위한 환율
+        usd_to_krw = 1350
+
         # P&L 색상
         day_pnl_color = self.colors['green'] if p.day_pnl >= 0 else self.colors['red']
         total_pnl_color = self.colors['green'] if p.total_pnl >= 0 else self.colors['red']
 
         print(f"{self.colors['bold']}[PORTFOLIO] Real Account{self.colors['reset']}")
-        print(f"  Total Value: ${p.total_value:,.2f}")
-        print(f"  Cash: ${p.cash:,.2f} | Stock: ${p.stock_value:,.2f}")
-        print(f"  Day P&L: {day_pnl_color}{p.day_pnl:+,.2f} ({p.day_pnl_pct:+.2f}%){self.colors['reset']}")
-        print(f"  Total P&L: {total_pnl_color}{p.total_pnl:+,.2f} ({p.total_pnl_pct:+.2f}%){self.colors['reset']}")
+        print(f"  Total Value: ${p.total_value:,.2f} (₩{p.total_value * usd_to_krw:,.0f})")
+        print(f"  Cash: ${p.cash:,.2f} (₩{p.cash * usd_to_krw:,.0f}) | Stock: ${p.stock_value:,.2f} (₩{p.stock_value * usd_to_krw:,.0f})")
+        print(f"  Day P&L: {day_pnl_color}{p.day_pnl:+,.2f} (₩{p.day_pnl * usd_to_krw:+,.0f}) ({p.day_pnl_pct:+.2f}%){self.colors['reset']}")
+        print(f"  Total P&L: {total_pnl_color}{p.total_pnl:+,.2f} (₩{p.total_pnl * usd_to_krw:+,.0f}) ({p.total_pnl_pct:+.2f}%){self.colors['reset']}")
 
         # 보유종목 상세 정보 (손절가 및 갭 포함)
         if hasattr(p, 'positions') and p.positions:

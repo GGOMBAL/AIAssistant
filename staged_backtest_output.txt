@@ -1,4 +1,0 @@
-Traceback (most recent call last):
-  File "C:\WorkSpace\AIAgentProject\AIAssistant\test_staged_backtest.py", line 14, in <module>
-    from main_auto_trade import run_backtest_staged, load_config_sync, get_symbols_from_mongodb
-ImportError: cannot import name 'load_config_sync' from 'main_auto_trade' (C:\WorkSpace\AIAgentProject\AIAssistant\main_auto_trade.py). Did you mean: 'load_config'?

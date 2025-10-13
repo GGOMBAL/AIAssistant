@@ -240,7 +240,8 @@ def _print_ticker_signal_timeline(candidates_data: Dict, symbols: List[str], num
             else:
                 signal_status['W'] = '-'
 
-            # Daily 시그널 (D) - BuySig 체크
+            # Daily 시그널 (D) - 기술지표 기반 평가
+            # BuySig 컬럼이 있으면 사용, 없으면 SMA 기반 평가
             if 'BuySig' in df_D.columns:
                 buy_sig = df_D.loc[date, 'BuySig']
                 if buy_sig >= 1:
@@ -249,7 +250,33 @@ def _print_ticker_signal_timeline(candidates_data: Dict, symbols: List[str], num
                 else:
                     signal_status['D'] = '-'
             else:
-                signal_status['D'] = '?'
+                # Staged Pipeline 데이터: SMA 기반 평가
+                d_close = 0
+                d_sma20 = 0
+                d_sma50 = 0
+
+                for col in ['close', 'Dclose', 'Close']:
+                    if col in df_D.columns:
+                        d_close = df_D.loc[date, col]
+                        break
+
+                if 'SMA20' in df_D.columns:
+                    d_sma20 = df_D.loc[date, 'SMA20']
+                if 'SMA50' in df_D.columns:
+                    d_sma50 = df_D.loc[date, 'SMA50']
+
+                # 단순 트렌드 평가: close > SMA20 > SMA50
+                if d_close > 0 and d_sma20 > 0 and d_sma50 > 0:
+                    if d_close > d_sma20 and d_sma20 > d_sma50:
+                        signal_status['D'] = 'O'
+                        signal_desc.append('Above SMA20&50')
+                    elif d_close > d_sma20:
+                        signal_status['D'] = 'o'
+                        signal_desc.append('Above SMA20')
+                    else:
+                        signal_status['D'] = '-'
+                else:
+                    signal_status['D'] = '-'
 
             # RS 시그널
             if signals['RS'] is not None and len(signals['RS']) > 0:

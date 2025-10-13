@@ -60,6 +60,12 @@ class DataFrameGenerator:
         if universe is None:
             universe = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA"]
 
+        # Convert string dates to datetime if needed
+        if isinstance(start_day, str):
+            start_day = datetime.strptime(start_day, '%Y-%m-%d')
+        if isinstance(end_day, str):
+            end_day = datetime.strptime(end_day, '%Y-%m-%d')
+
         self.start_day = start_day
         self.data_start_day = start_day - timedelta(days=365*3)  # 3 years of historical data
         self.end_day = end_day

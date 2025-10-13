@@ -1060,43 +1060,63 @@ async def show_ticker_signal_timeline(config: dict):
     print(f"\n분석 기간: {start_date.strftime('%Y-%m-%d')} ~ {end_date.strftime('%Y-%m-%d')}")
 
     try:
-        # Staged Pipeline 실행
-        print("\n[Staged Pipeline] 시그널 생성 중...")
-        pipeline = StagedPipelineService(
-            config=config,
-            market='US',
-            area='US',
-            start_day=data_start,
-            end_day=end_date
-        )
+        # Try NASDAQ first, then NYSE
+        markets_to_try = ['NASDAQ', 'NYSE']
+        all_final_candidates = []
+        all_loaded_data_combined = {}
 
-        pipeline_results = pipeline.run_staged_pipeline(symbols)
+        for market in markets_to_try:
+            print(f"\n[Staged Pipeline] {market}에서 시그널 생성 중...")
 
-        # Get final candidates from pipeline
-        final_candidates = pipeline_results.get('final_candidates', [])
+            try:
+                pipeline = StagedPipelineService(
+                    config=config,
+                    market=market,
+                    area='US',
+                    start_day=data_start,
+                    end_day=end_date
+                )
 
-        if not final_candidates:
+                pipeline_results = pipeline.run_staged_pipeline(symbols)
+
+                # Get final candidates from pipeline
+                final_candidates = pipeline_results.get('final_candidates', [])
+
+                if final_candidates:
+                    print(f"   ✅ {market}에서 {len(final_candidates)}개 종목 발견: {', '.join(final_candidates)}")
+                    all_final_candidates.extend(final_candidates)
+
+                    # Collect data from this market
+                    market_data = pipeline.data_loader.get_all_loaded_data()
+                    if market_data:
+                        for stage, symbols_data in market_data.items():
+                            if isinstance(symbols_data, dict):
+                                for symbol, df in symbols_data.items():
+                                    if symbol not in all_loaded_data_combined:
+                                        all_loaded_data_combined[symbol] = {}
+                                    all_loaded_data_combined[symbol][stage] = df
+                else:
+                    print(f"   ℹ️  {market}에서 해당 종목을 찾을 수 없습니다.")
+
+            except Exception as market_error:
+                print(f"   ⚠️  {market} 조회 중 오류: {market_error}")
+                continue
+
+        # Remove duplicates
+        all_final_candidates = list(set(all_final_candidates))
+
+        if not all_final_candidates:
             print("\n[WARNING] 시그널을 통과한 종목이 없습니다.")
-            print("   - 해당 종목의 데이터가 MongoDB에 없거나")
+            print("   - 해당 종목의 데이터가 NASDAQ 및 NYSE MongoDB에 없거나")
             print("   - 필터 조건을 통과하지 못했을 수 있습니다.")
+            print(f"   - 입력한 종목: {', '.join(symbols)}")
             return
 
-        # Load all data for final candidates
-        print(f"\n최종 후보 {len(final_candidates)}개 종목의 데이터 로딩 중...")
-        all_loaded_data = pipeline.data_loader.get_all_loaded_data()
-
-        # Convert data structure from {stage: {symbol: df}} to {symbol: {stage: df}}
-        final_candidates_data = {}
-        if all_loaded_data:
-            for stage, symbols_data in all_loaded_data.items():
-                if isinstance(symbols_data, dict):
-                    for symbol, df in symbols_data.items():
-                        if symbol not in final_candidates_data:
-                            final_candidates_data[symbol] = {}
-                        final_candidates_data[symbol][stage] = df
+        # Use combined data from all markets
+        print(f"\n최종 후보 {len(all_final_candidates)}개 종목의 데이터 로딩 완료")
 
         # Filter only symbols that have D (daily) data
-        symbols_with_d_data = [s for s, data in final_candidates_data.items() if 'D' in data]
+        symbols_with_d_data = [s for s, data in all_loaded_data_combined.items() if 'D' in data]
 
         if not symbols_with_d_data:
             print("\n[WARNING] 일봉 데이터가 있는 종목이 없습니다.")
@@ -1110,7 +1130,7 @@ async def show_ticker_signal_timeline(config: dict):
         print(f"개별 티커 시그널 타임라인 (최근 {days}일)")
         print("="*80)
 
-        _print_ticker_signal_timeline(final_candidates_data, symbols_with_d_data, num_days=100)
+        _print_ticker_signal_timeline(all_loaded_data_combined, symbols_with_d_data, num_days=100)
 
         print("\n" + "="*60)
         print("시그널 타임라인 출력 완료")

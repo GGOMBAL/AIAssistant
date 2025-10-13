@@ -523,7 +523,7 @@ class DailyBacktestService:
             timestamp=date,
             reason=reason,
             pnl=return_cash - position.balance,
-            again=final_again,
+            again=asset_a_gain_new,
             buy_price=position.avg_price,
             holding_days=position.duration,
             risk=position.risk
@@ -532,7 +532,7 @@ class DailyBacktestService:
         self.trade_count += 1
 
         if self.config.message_output:
-            logger.info(f"{date} - SELL: {ticker}, AGAIN: {final_again:.3f}, "
+            logger.info(f"{date} - SELL: {ticker}, AGAIN: {asset_a_gain_new:.3f}, "
                        f"HoldDays: {position.duration}, Price: {sell_price:.2f}")
 
         return trade
@@ -686,13 +686,24 @@ class DailyBacktestService:
             asset_balance_new = round(float(input_size * asset_a_gain_new), 3)
 
             # 6. 손절가 계산 (refer CalcLossCutPrice 로직)
+            # 신규 매수 시에는 losscut_old = 0으로 전달
             losscut_price = self._calculate_refer_losscut_price(
-                asset_a_gain_new, entry_price, entry_price, self.config.std_risk
+                asset_a_gain_new, 0.0, entry_price, self.config.std_risk
             )
 
             # 7. Whipsaw 조건 체크 (refer와 동일)
             low_gain = (low_price - entry_price) / entry_price if entry_price > 0 else 0
             cut_gain = (losscut_price - entry_price) / entry_price if entry_price > 0 else 0
+
+            # DEBUG: WHIPSAW 조건 상세 로그
+            if self.config.message_output and self.trade_count < 5:  # 처음 5개만 출력
+                logger.info(f"[DEBUG WHIPSAW] {ticker} @ {date}")
+                logger.info(f"  entry_price: ${entry_price:.2f}")
+                logger.info(f"  low_price: ${low_price:.2f}")
+                logger.info(f"  losscut_price: ${losscut_price:.2f}")
+                logger.info(f"  low_gain: {low_gain:.4f} ({low_gain*100:.2f}%)")
+                logger.info(f"  cut_gain: {cut_gain:.4f} ({cut_gain*100:.2f}%)")
+                logger.info(f"  low_gain < cut_gain: {low_gain < cut_gain}")
 
             if self.config.enable_whipsaw and low_gain < cut_gain:
                 # Whipsaw condition - immediate loss cut
@@ -725,7 +736,7 @@ class DailyBacktestService:
 
             if self.config.message_output:
                 logger.info(f"{date} - BUY: {ticker}, Price: {entry_price:.2f}, "
-                           f"Amount: {investment_amount:.1f}")
+                           f"Amount: {input_size:.1f}")
 
             return trade
 

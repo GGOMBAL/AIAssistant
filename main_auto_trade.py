@@ -1,11 +1,18 @@
 """
-Auto Trade System Main Launcher (Refactored)
+Auto Trade System Main Launcher (Unified Version with Report Agent)
 오케스트레이터 - Project Layer를 사용하여 백테스트 및 실거래 실행
 
-이 파일은 오케스트레이터 역할만 수행하며:
+[2025-10-21] Merged with main_auto_trade_with_report.py
+- 통합된 메뉴 시스템 (6개 옵션)
+- Report Agent 완전 통합
+- 실시간 모니터링 (매수 신호 + 보유 종목)
+
+이 파일은 오케스트레이터 역할을 수행하며:
 - Indicator Layer (DataFrameGenerator) 사용
 - Strategy Layer (SignalGenerationService) 사용
 - Service Layer (DailyBacktestService) 사용
+- Reporting Layer (ReportAgent) 사용 - 시각화 담당
+- Real-time Monitoring (LivePriceService + RealTimeDisplay)
 """
 
 import asyncio
@@ -13,10 +20,14 @@ import logging
 import sys
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import yaml
 from pymongo import MongoClient
 import pandas as pd
+
+# Set matplotlib backend to non-interactive before importing quantstats
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
 
 # 프로젝트 경로 추가
 project_root = Path(__file__).parent
@@ -25,8 +36,28 @@ sys.path.append(str(project_root))
 # Project Layer imports
 from project.indicator.data_frame_generator import DataFrameGenerator
 from project.strategy.signal_generation_service import SignalGenerationService
+from project.strategy.position_manager import PositionManager  # 포지션 관리 (손절가, 트레일링 스탑)
 from project.service.daily_backtest_service import DailyBacktestService, BacktestConfig
 from project.service.staged_pipeline_service import StagedPipelineService
+from project.service.live_price_service import LivePriceService
+from project.ui.realtime_display import RealTimeDisplay
+
+# Reporting Layer imports
+from project.reporting.report_agent import ReportAgent
+
+# Helper Layer imports (for order execution)
+from project.Helper.kis_api_helper_us import KISUSHelper
+
+# Import QuantStats for terminal output
+try:
+    import quantstats_lumi as qs
+    # Disable matplotlib plots in QuantStats
+    import matplotlib.pyplot as plt
+    plt.ioff()  # Turn off interactive mode
+    QUANTSTATS_AVAILABLE = True
+except ImportError:
+    QUANTSTATS_AVAILABLE = False
+    logger.warning("quantstats_lumi not available. Install with: pip install quantstats-lumi")
 
 # 로깅 설정
 logging.basicConfig(
@@ -45,6 +76,258 @@ logger = logging.getLogger(__name__)
 DEBUG = False
 BACKTEST_MODE = 'LIMITED'
 
+# Report Agent instance (singleton)
+report_agent: Optional[ReportAgent] = None
+
+def get_report_agent(config: dict) -> ReportAgent:
+    """Get or create Report Agent instance"""
+    global report_agent
+    if report_agent is None:
+        report_agent = ReportAgent(config)
+    return report_agent
+
+def print_quantstats_terminal_report(portfolio_value: pd.Series, benchmark: str = None, title: str = "Performance Report"):
+    """
+    QuantStats 터미널 리포트 출력
+
+    Args:
+        portfolio_value: 포트폴리오 가치 시계열 (pandas Series with DatetimeIndex)
+        benchmark: 벤치마크 티커 (예: 'SPY', None이면 벤치마크 없이 출력)
+        title: 리포트 제목
+    """
+    if not QUANTSTATS_AVAILABLE:
+        logger.warning("QuantStats not available. Skipping terminal report.")
+        return
+
+    try:
+        import matplotlib.pyplot as plt
+
+        # Close any existing plots to prevent GUI issues
+        plt.close('all')
+
+        # Validate input
+        if not isinstance(portfolio_value.index, pd.DatetimeIndex):
+            logger.error("portfolio_value must have DatetimeIndex")
+            return
+
+        # Calculate returns from portfolio value
+        returns = portfolio_value.pct_change().fillna(0)
+
+        # Remove timezone info if present (QuantStats compatibility)
+        if returns.index.tz is not None:
+            returns.index = returns.index.tz_localize(None)
+
+        # Print header
+        print("\n" + "="*70)
+        print(title.center(70))
+        print("="*70 + "\n")
+
+        # Get benchmark data if specified
+        benchmark_data = None
+        if benchmark:
+            try:
+                print(f"Downloading benchmark data ({benchmark})...\n")
+                benchmark_data = qs.utils.download_returns(benchmark)
+
+                # Ensure benchmark has same date format
+                if benchmark_data.index.tz is not None:
+                    benchmark_data.index = benchmark_data.index.tz_localize(None)
+
+                # Align benchmark with returns dates
+                benchmark_data = benchmark_data.reindex(returns.index, method='ffill')
+            except Exception as e:
+                logger.warning(f"Could not use benchmark {benchmark}: {e}")
+                benchmark_data = None
+
+        # Print performance metrics manually (for terminal output)
+        print("[Performance Metrics]\n")
+
+        # Format output table
+        if benchmark_data is not None:
+            print(f"{'Metric':<30} {'Benchmark':<15} {'Strategy':<15}")
+            print("-" * 60)
+        else:
+            print(f"{'Metric':<30} {'Strategy':<15}")
+            print("-" * 45)
+
+        # Period information
+        start_period = returns.index[0].strftime('%Y-%m-%d')
+        end_period = returns.index[-1].strftime('%Y-%m-%d')
+
+        print(f"{'Start Period':<30} {start_period:<15}")
+        print(f"{'End Period':<30} {end_period:<15}")
+        print(f"{'Risk-Free Rate %':<30} {'0.0%':<15}")
+        print(f"{'Time in Market %':<30} {'100.0%':<15}")
+        print()
+
+        # Calculate and print metrics
+        try:
+            # Helper function to extract scalar value
+            def to_scalar(value):
+                """Convert Series or scalar to float"""
+                if isinstance(value, pd.Series):
+                    return float(value.iloc[0]) if len(value) > 0 else 0.0
+                return float(value) if value is not None else 0.0
+
+            # Returns metrics
+            total_return = to_scalar(qs.stats.comp(returns))
+            cagr = to_scalar(qs.stats.cagr(returns))
+
+            if benchmark_data is not None:
+                bench_total = to_scalar(qs.stats.comp(benchmark_data))
+                bench_cagr = to_scalar(qs.stats.cagr(benchmark_data))
+                print(f"{'Total Return':<30} {bench_total:>14.2%} {total_return:>14.2%}")
+                print(f"{'CAGR% (Annual Return)':<30} {bench_cagr:>14.2%} {cagr:>14.2%}")
+            else:
+                print(f"{'Total Return':<30} {total_return:>14.2%}")
+                print(f"{'CAGR% (Annual Return)':<30} {cagr:>14.2%}")
+            print()
+
+            # Risk-adjusted metrics
+            sharpe = to_scalar(qs.stats.sharpe(returns))
+            sortino = to_scalar(qs.stats.sortino(returns))
+
+            if benchmark_data is not None:
+                bench_sharpe = to_scalar(qs.stats.sharpe(benchmark_data))
+                bench_sortino = to_scalar(qs.stats.sortino(benchmark_data))
+                print(f"{'Sharpe':<30} {bench_sharpe:>14.2f} {sharpe:>14.2f}")
+                print(f"{'Sortino':<30} {bench_sortino:>14.2f} {sortino:>14.2f}")
+            else:
+                print(f"{'Sharpe':<30} {sharpe:>14.2f}")
+                print(f"{'Sortino':<30} {sortino:>14.2f}")
+
+            # Drawdown metrics
+            max_dd = to_scalar(qs.stats.max_drawdown(returns))
+
+            if benchmark_data is not None:
+                bench_max_dd = to_scalar(qs.stats.max_drawdown(benchmark_data))
+                print(f"{'Max Drawdown %':<30} {bench_max_dd:>14.2%} {max_dd:>14.2%}")
+            else:
+                print(f"{'Max Drawdown %':<30} {max_dd:>14.2%}")
+            print()
+
+            # Volatility
+            volatility = to_scalar(qs.stats.volatility(returns))
+
+            if benchmark_data is not None:
+                bench_vol = to_scalar(qs.stats.volatility(benchmark_data))
+                print(f"{'Volatility (ann.)':<30} {bench_vol:>14.2%} {volatility:>14.2%}")
+            else:
+                print(f"{'Volatility (ann.)':<30} {volatility:>14.2%}")
+            print()
+
+            # Win rate metrics
+            win_rate = to_scalar(qs.stats.win_rate(returns))
+            avg_win = to_scalar(qs.stats.avg_win(returns))
+            avg_loss = to_scalar(qs.stats.avg_loss(returns))
+
+            print(f"{'Win Rate %':<30} {win_rate:>14.2%}")
+            print(f"{'Avg. Win %':<30} {avg_win:>14.2%}")
+            print(f"{'Avg. Loss %':<30} {avg_loss:>14.2%}")
+            print()
+
+            # Benchmark comparison metrics
+            if benchmark_data is not None:
+                # Calculate correlation manually (most reliable)
+                try:
+                    correlation = to_scalar(returns.corr(benchmark_data))
+                    print(f"{'Correlation':<30} {correlation:>14.2f}")
+                except Exception as e:
+                    logger.debug(f"Could not calculate correlation: {e}")
+
+                # Try information_ratio (may fail with some data)
+                try:
+                    info_ratio = to_scalar(qs.stats.information_ratio(returns, benchmark_data))
+                    print(f"{'Information Ratio':<30} {info_ratio:>14.2f}")
+                except Exception as e:
+                    logger.debug(f"Could not calculate information ratio: {e}")
+
+                # Try R-squared (may fail with some data)
+                try:
+                    r2 = to_scalar(qs.stats.r_squared(returns, benchmark_data))
+                    print(f"{'R-Squared':<30} {r2:>14.2f}")
+                except Exception as e:
+                    logger.debug(f"Could not calculate R-squared: {e}")
+
+                print()
+
+        except Exception as e:
+            logger.error(f"Error calculating metrics: {e}")
+            import traceback
+            traceback.print_exc()
+
+        # Close plots after generating report
+        plt.close('all')
+
+        print("=" * 70)
+        print("End of Performance Report".center(70))
+        print("=" * 70 + "\n")
+
+    except Exception as e:
+        logger.error(f"Error generating QuantStats terminal report: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        # Ensure all plots are closed
+        try:
+            import matplotlib.pyplot as plt
+            plt.close('all')
+        except:
+            pass
+
+def load_staged_pipeline_config(preset: str = None) -> dict:
+    """
+    Strategy Signal 설정 파일에서 Threshold 로드
+
+    Previously used staged_pipeline_config.yaml, now uses strategy_signal_config.yaml
+
+    Args:
+        preset: 'conservative', 'aggressive', 'balanced', 'custom' 중 하나
+                None이면 active_strategy 사용
+
+    Returns:
+        Staged pipeline threshold 설정 딕셔너리
+    """
+    config_path = project_root / 'config' / 'strategy_signal_config.yaml'
+
+    if not config_path.exists():
+        logger.warning(f"Strategy signal config not found: {config_path}")
+        logger.warning("Using default threshold values (0.5)")
+        return {
+            'earnings_threshold': 0.5,
+            'fundamental_threshold': 0.5,
+            'weekly_threshold': 0.5,
+            'rs_threshold': 0.5,
+            'daily_threshold': 0.5
+        }
+
+    with open(config_path, 'r', encoding='utf-8') as f:
+        signal_config = yaml.safe_load(f)
+
+    # Preset이 지정되지 않으면 active_strategy 사용
+    strategy_name = preset if preset else signal_config.get('active_strategy', 'balanced')
+
+    # 해당 strategy의 thresholds 가져오기
+    strategies = signal_config.get('strategies', {})
+    if strategy_name not in strategies:
+        logger.warning(f"Strategy '{strategy_name}' not found, using 'balanced'")
+        strategy_name = 'balanced'
+
+    strategy = strategies.get(strategy_name, {})
+    thresholds = strategy.get('thresholds', {})
+
+    logger.info(f"Loading thresholds from strategy: {strategy_name}")
+
+    # E, F, W, RS, D 형식을 earnings_threshold 등으로 변환
+    return {
+        'earnings_threshold': thresholds.get('E', 0.5),
+        'fundamental_threshold': thresholds.get('F', 0.5),
+        'weekly_threshold': thresholds.get('W', 0.5),
+        'rs_threshold': thresholds.get('RS', 0.5),
+        'daily_threshold': thresholds.get('D', 0.5)
+    }
+
+
 def load_config():
     """설정 파일 로드"""
     global DEBUG, BACKTEST_MODE
@@ -56,6 +339,20 @@ def load_config():
     DEBUG = config.get('global_settings', {}).get('DEBUG', False)
     BACKTEST_MODE = config.get('global_settings', {}).get('BACKTEST_MODE', 'LIMITED')
 
+    # Staged Pipeline 설정 추가
+    staged_pipeline_preset = config.get('global_settings', {}).get('STAGED_PIPELINE_PRESET', None)
+    staged_pipeline_config = load_staged_pipeline_config(preset=staged_pipeline_preset)
+    config['staged_pipeline'] = staged_pipeline_config
+
+    # KIS API credentials 추가 (US 시장 거래용)
+    if config.get('REAL_APP_KEY'):
+        config['app_key'] = config.get('REAL_APP_KEY')
+        config['app_secret'] = config.get('REAL_APP_SECRET')
+        config['account_no'] = config.get('REAL_CANO')
+        config['product_code'] = config.get('REAL_ACNT_PRDT_CD')
+        config['base_url'] = config.get('REAL_URL')
+        config['is_virtual'] = False
+
     # 로깅 레벨 조정
     if DEBUG:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -65,20 +362,29 @@ def load_config():
     print(f"DEBUG 모드: {'ON' if DEBUG else 'OFF'}")
     print(f"백테스트 모드: {BACKTEST_MODE}")
 
+    if staged_pipeline_preset:
+        print(f"Staged Pipeline Preset: {staged_pipeline_preset}")
+    print(f"Staged Pipeline Thresholds:")
+    for key, value in staged_pipeline_config.items():
+        print(f"  - {key}: {value}")
+
     return config
 
-async def get_symbols_from_mongodb(config: dict, mode: str = 'FULL') -> List[str]:
+async def get_symbols_from_mongodb(config: dict, mode: str = 'FULL', randomize: bool = True, seed: Optional[int] = None) -> List[str]:
     """
     MongoDB에서 종목 리스트 가져오기
 
     Args:
         config: 설정 딕셔너리
         mode: 'FULL' (모든 종목) or 'LIMITED' (제한된 종목)
+        randomize: LIMITED 모드에서 랜덤 샘플링 여부 (기본: True)
+        seed: 랜덤 시드 (재현 가능한 결과를 위해, None이면 매번 다른 결과)
 
     Returns:
         심볼 리스트
     """
     from pymongo import MongoClient
+    import random
 
     mongodb_config = {
         'host': config.get('MONGODB_LOCAL', 'localhost'),
@@ -112,8 +418,26 @@ async def get_symbols_from_mongodb(config: dict, mode: str = 'FULL') -> List[str
 
     if mode == 'LIMITED':
         limited_count = 500
-        all_symbols = all_symbols[:limited_count]
-        print(f"  Limited to: {len(all_symbols)} symbols")
+
+        if randomize and len(all_symbols) > limited_count:
+            # 랜덤 시드 설정 (재현 가능한 결과를 위해)
+            if seed is not None:
+                random.seed(seed)
+                print(f"  Random seed: {seed}")
+            else:
+                # 현재 시간 기반 시드 사용 (매번 다른 결과)
+                from datetime import datetime
+                current_seed = int(datetime.now().timestamp())
+                random.seed(current_seed)
+                print(f"  Random seed: {current_seed}")
+
+            # 랜덤 샘플링
+            all_symbols = random.sample(all_symbols, limited_count)
+            print(f"  Randomly sampled: {len(all_symbols)} symbols")
+        else:
+            # 랜덤화 비활성화 또는 종목 수가 제한보다 적을 경우
+            all_symbols = all_symbols[:limited_count]
+            print(f"  Limited to first: {len(all_symbols)} symbols")
 
     return all_symbols
 
@@ -228,17 +552,22 @@ def _print_ticker_signal_timeline(candidates_data: Dict, symbols: List[str], num
 
                     # 52주 최고가 근처 체크
                     if w_52h > 0 and w_close > 0:
+                        pct_from_52h = (w_close / w_52h) * 100
                         if w_close >= w_52h * 0.90:
                             signal_status['W'] = 'O'
-                            signal_desc.append('52W High 90%+')
+                            signal_desc.append(f'52W High {pct_from_52h:.1f}%')
                         else:
                             signal_status['W'] = '-'
+                            signal_desc.append(f'52W High {pct_from_52h:.1f}% (Need 90%+)')
                     else:
                         signal_status['W'] = '?'
+                        signal_desc.append('No 52W High data')
                 else:
                     signal_status['W'] = '-'
+                    signal_desc.append('No W data')
             else:
                 signal_status['W'] = '-'
+                signal_desc.append('No W data')
 
             # Daily 시그널 (D) - 기술지표 기반 평가
             # BuySig 컬럼이 있으면 사용, 없으면 SMA 기반 평가
@@ -249,6 +578,7 @@ def _print_ticker_signal_timeline(candidates_data: Dict, symbols: List[str], num
                     signal_desc.append('Daily Buy')
                 else:
                     signal_status['D'] = '-'
+                    signal_desc.append(f'BuySig={buy_sig:.0f} (Need >=1)')
             else:
                 # Staged Pipeline 데이터: SMA 기반 평가
                 d_close = 0
@@ -269,14 +599,16 @@ def _print_ticker_signal_timeline(candidates_data: Dict, symbols: List[str], num
                 if d_close > 0 and d_sma20 > 0 and d_sma50 > 0:
                     if d_close > d_sma20 and d_sma20 > d_sma50:
                         signal_status['D'] = 'O'
-                        signal_desc.append('Above SMA20&50')
+                        signal_desc.append(f'Above SMA20({d_sma20:.2f})&50({d_sma50:.2f})')
                     elif d_close > d_sma20:
                         signal_status['D'] = 'o'
-                        signal_desc.append('Above SMA20')
+                        signal_desc.append(f'Above SMA20({d_sma20:.2f}), SMA20<SMA50')
                     else:
                         signal_status['D'] = '-'
+                        signal_desc.append(f'Below SMA20({d_sma20:.2f})')
                 else:
                     signal_status['D'] = '-'
+                    signal_desc.append('No SMA data')
 
             # RS 시그널
             if signals['RS'] is not None and len(signals['RS']) > 0:
@@ -292,10 +624,13 @@ def _print_ticker_signal_timeline(candidates_data: Dict, symbols: List[str], num
                         signal_desc.append(f'RS={rs_4w:.0f}')
                     else:
                         signal_status['RS'] = '-'
+                        signal_desc.append(f'RS={rs_4w:.0f} (Need >=70)')
                 else:
                     signal_status['RS'] = '-'
+                    signal_desc.append('No RS data at date')
             else:
                 signal_status['RS'] = '-'
+                signal_desc.append('No RS data')
 
             # Earnings 시그널 (E)
             if signals['E'] is not None and len(signals['E']) > 0:
@@ -306,13 +641,21 @@ def _print_ticker_signal_timeline(candidates_data: Dict, symbols: List[str], num
                     rev_yoy = e_latest.get('rev_yoy', 0)
                     if eps_yoy > 0 and rev_yoy > 0:
                         signal_status['E'] = 'O'
-                        signal_desc.append(f'EPS+{eps_yoy:.0f}%')
+                        signal_desc.append(f'EPS+{eps_yoy:.0f}% REV+{rev_yoy:.0f}%')
                     else:
                         signal_status['E'] = '-'
+                        if eps_yoy <= 0 and rev_yoy <= 0:
+                            signal_desc.append(f'EPS{eps_yoy:+.0f}% REV{rev_yoy:+.0f}%')
+                        elif eps_yoy <= 0:
+                            signal_desc.append(f'EPS{eps_yoy:+.0f}% (Need >0)')
+                        else:
+                            signal_desc.append(f'REV{rev_yoy:+.0f}% (Need >0)')
                 else:
                     signal_status['E'] = '-'
+                    signal_desc.append('No E data at date')
             else:
                 signal_status['E'] = '-'
+                signal_desc.append('No E data')
 
             # Fundamental 시그널 (F)
             if signals['F'] is not None and len(signals['F']) > 0:
@@ -323,13 +666,21 @@ def _print_ticker_signal_timeline(candidates_data: Dict, symbols: List[str], num
                     rev_yoy = f_latest.get('REV_YOY', 0)
                     if eps_yoy > 0 and rev_yoy > 0:
                         signal_status['F'] = 'O'
-                        signal_desc.append(f'Fund+')
+                        signal_desc.append(f'Fund: EPS+{eps_yoy:.0f}% REV+{rev_yoy:.0f}%')
                     else:
                         signal_status['F'] = '-'
+                        if eps_yoy <= 0 and rev_yoy <= 0:
+                            signal_desc.append(f'Fund: EPS{eps_yoy:+.0f}% REV{rev_yoy:+.0f}%')
+                        elif eps_yoy <= 0:
+                            signal_desc.append(f'Fund: EPS{eps_yoy:+.0f}% (Need >0)')
+                        else:
+                            signal_desc.append(f'Fund: REV{rev_yoy:+.0f}% (Need >0)')
                 else:
                     signal_status['F'] = '-'
+                    signal_desc.append('No F data at date')
             else:
                 signal_status['F'] = '-'
+                signal_desc.append('No F data')
 
             # 10일마다 또는 시그널이 있는 경우 출력
             has_signal = any(v in ['O', 'o'] for v in signal_status.values())
@@ -386,12 +737,23 @@ async def run_backtest_staged(
 
     # Run staged pipeline
     print("\n[Staged Pipeline] 단계별 필터링 시작...")
+
+    # Merge staged pipeline config with main config
+    pipeline_config = config.copy()
+    if 'staged_pipeline' in config:
+        pipeline_config.update(config['staged_pipeline'])
+        print(f"\nStaged Pipeline Thresholds:")
+        for key, value in config['staged_pipeline'].items():
+            print(f"  - {key}: {value}")
+
     pipeline = StagedPipelineService(
-        config=config,
+        config=pipeline_config,
         market='US',
         area='US',
         start_day=data_start,
-        end_day=end_date_dt
+        end_day=end_date_dt,
+        is_backtest=True,  # Backtest mode: prevent future reference in Highest calculations
+        execution_mode='analysis'  # Menu 1: Backtest uses D-1 data for breakout analysis
     )
 
     pipeline_results = pipeline.run_staged_pipeline(symbols)
@@ -399,7 +761,7 @@ async def run_backtest_staged(
     print(f"\n최종 매매 후보: {pipeline_results['total_candidates']} 종목")
 
     if pipeline_results['total_candidates'] == 0:
-        print("⚠️  매매 후보 종목이 없습니다.")
+        print("[WARNING] 매매 후보 종목이 없습니다.")
         return {
             'status': 'no_candidates',
             'pipeline_results': pipeline_results
@@ -476,9 +838,13 @@ async def run_backtest_staged(
                 for col in required_cols:
                     if col not in df_D.columns:
                         if col in ['BuySig', 'SellSig']:
-                            df_D[col] = 1  # 모든 종목에 매수 신호 (이미 필터링 통과)
+                            # BuySig should be generated by D stage signal generation
+                            # This is a fallback only for edge cases
+                            df_D[col] = 0  # No signal as default
+                            if col == 'BuySig':
+                                logger.debug(f"{symbol}: BuySig not found in D stage data (unexpected), using 0")
                         elif col == 'signal':
-                            df_D[col] = 1
+                            df_D[col] = 0
                         elif col == 'Type':
                             df_D[col] = 'Staged'
                         elif col == 'TargetPrice':
@@ -493,9 +859,12 @@ async def run_backtest_staged(
                         else:
                             df_D[col] = 0
 
-                # Debug: Check if we have valid data
-                print(f"    [{symbol}] Shape: {df_D.shape}, BuySig sum: {df_D['BuySig'].sum()}, "
-                      f"Price range: {df_D['close'].min():.2f} - {df_D['close'].max():.2f}")
+                # Debug: Check if we have valid data and date-specific signals
+                buy_sig_sum = df_D['BuySig'].sum()
+                buy_sig_count = (df_D['BuySig'] > 0).sum()  # Count days with signals
+                print(f"    [{symbol}] Shape: {df_D.shape}, "
+                      f"BuySig: {buy_sig_count} days ({buy_sig_sum:.1f} total), "
+                      f"Price range: ${df_D['close'].min():.2f} - ${df_D['close'].max():.2f}")
 
                 backtest_data[symbol] = df_D
 
@@ -507,7 +876,8 @@ async def run_backtest_staged(
             backtest_config.initial_cash = initial_cash / 1_000_000  # Convert to million dollars
             backtest_config.max_positions = 10
             backtest_config.slippage = 0.002
-            backtest_config.message_output = True  # 날짜별 Balance 출력 활성화
+            backtest_config.message_output = True  # 날짜별 상세 출력 활성화
+            backtest_config.enable_whipsaw = False  # WHIPSAW 비활성화 (테스트용)
 
             print(f"\n백테스트 설정:")
             print(f"  - 초기 자본: ${initial_cash:,.0f} = ${backtest_config.initial_cash:.2f}M")
@@ -562,6 +932,79 @@ async def run_backtest_staged(
 
         print(f"\n[실행 정보]")
         print(f"  실행 시간: {backtest_results.execution_time:.2f}초")
+
+        # Report Agent를 통한 백테스트 대시보드 생성 (Option 1)
+        try:
+            print("\n[Report Agent] 백테스트 대시보드 생성 중...")
+            report = get_report_agent(config)
+            dashboard_path = report.generate_backtest_report(
+                backtest_results=backtest_results,
+                save=True
+            )
+            if dashboard_path:
+                print(f"[Report Agent] 대시보드 생성 완료: {dashboard_path}")
+        except Exception as e:
+            logger.warning(f"백테스트 대시보드 생성 실패: {e}")
+
+        # QuantStats 터미널 리포트 출력 (Option 1 추가)
+        try:
+            print("\n[QuantStats Report] 백테스트 성과 분석 리포트 생성 중...")
+
+            # Extract portfolio balance from backtest results
+            if hasattr(backtest_results, 'daily_balance') and backtest_results.daily_balance is not None:
+                daily_balance = backtest_results.daily_balance
+
+                # Convert to Series with DatetimeIndex if needed
+                if isinstance(daily_balance, pd.DataFrame):
+                    # Use 'total_value' or 'balance' column
+                    if 'total_value' in daily_balance.columns:
+                        portfolio_value = daily_balance['total_value']
+                    elif 'balance' in daily_balance.columns:
+                        portfolio_value = daily_balance['balance']
+                    else:
+                        # Use first numeric column
+                        numeric_cols = daily_balance.select_dtypes(include=[np.number]).columns
+                        if len(numeric_cols) > 0:
+                            portfolio_value = daily_balance[numeric_cols[0]]
+                        else:
+                            logger.warning("No numeric column found in daily_balance")
+                            portfolio_value = None
+                elif isinstance(daily_balance, pd.Series):
+                    portfolio_value = daily_balance
+                elif isinstance(daily_balance, dict):
+                    # Convert dict to Series
+                    portfolio_value = pd.Series(daily_balance)
+                else:
+                    logger.warning(f"Unsupported daily_balance type: {type(daily_balance)}")
+                    portfolio_value = None
+
+                if portfolio_value is not None and len(portfolio_value) > 0:
+                    # Ensure DatetimeIndex
+                    if not isinstance(portfolio_value.index, pd.DatetimeIndex):
+                        try:
+                            portfolio_value.index = pd.to_datetime(portfolio_value.index)
+                        except:
+                            logger.warning("Could not convert portfolio_value index to datetime")
+                            portfolio_value = None
+
+                    if portfolio_value is not None and isinstance(portfolio_value.index, pd.DatetimeIndex):
+                        # Print terminal report with SPY benchmark
+                        print_quantstats_terminal_report(
+                            portfolio_value=portfolio_value,
+                            benchmark='SPY',
+                            title="Backtest Performance vs SPY Benchmark"
+                        )
+                    else:
+                        logger.warning("Portfolio value does not have valid DatetimeIndex")
+                else:
+                    logger.warning("Portfolio value is empty or None")
+            else:
+                logger.warning("daily_balance not found in backtest_results")
+
+        except Exception as e:
+            logger.warning(f"QuantStats 터미널 리포트 생성 실패: {e}")
+            import traceback
+            traceback.print_exc()
 
         # 4. 개별 티커의 시그널 타임라인 출력 (비활성화)
         # print("\n" + "="*80)
@@ -716,12 +1159,15 @@ async def check_single_symbol_signal(symbol: str, config: dict):
 
         # NASDAQ과 NYSE에서 종목 검색
         market_found = None
+        market_code = None
 
         if symbol in client['NasDataBase_D'].list_collection_names():
             market_found = 'NASDAQ'
+            market_code = 'NAS'  # Correct market code for database queries
             print(f"   -> {symbol} found in NASDAQ market")
         elif symbol in client['NysDataBase_D'].list_collection_names():
             market_found = 'NYSE'
+            market_code = 'NYS'  # Correct market code for database queries
             print(f"   -> {symbol} found in NYSE market")
 
         client.close()
@@ -734,7 +1180,7 @@ async def check_single_symbol_signal(symbol: str, config: dict):
         print(f"\n[2/4] {symbol} 데이터 로딩 중...")
         df_generator = DataFrameGenerator(
             universe=[symbol],
-            market='US',
+            market=market_code,  # Use correct market code (NAS/NYS)
             area='US',
             start_day=start_date,
             end_day=end_date
@@ -1001,6 +1447,308 @@ async def check_single_symbol_signal(symbol: str, config: dict):
         print("END OF STRATEGY LAYER OUTPUT")
         print("="*60)
 
+        # DataFrame 출력: Signal 컬럼들 + 일봉 데이터 + ADR + TargetPrice + LossCutPrice
+        print("\n" + "="*60)
+        print("SIGNAL & PRICE DATAFRAME (Last 10 Days)")
+        print("="*60)
+
+        if symbol in df_D and not df_D[symbol].empty:
+            # df_dump 생성 (SignalGenerationService에서 생성한 데이터)
+            df_dump = signal_service.df_dump.get(symbol) if hasattr(signal_service, 'df_dump') and signal_service.df_dump else None
+
+            if df_dump is not None and not df_dump.empty:
+                # 필요한 컬럼들 선택
+                display_cols = []
+
+                # Signal columns (ALL signals including eBuySig and SellSig)
+                signal_cols = ['eBuySig', 'fBuySig', 'wBuySig', 'rsBuySig', 'dBuySig', 'BuySig', 'SellSig']
+                for col in signal_cols:
+                    if col in df_dump.columns:
+                        display_cols.append(col)
+
+                # Price columns (from df_D)
+                price_cols = ['high', 'low', 'open', 'close']
+                for col in price_cols:
+                    if col in df_dump.columns:
+                        display_cols.append(col)
+                    elif 'D' + col in df_dump.columns:  # Try with D prefix
+                        display_cols.append('D' + col)
+
+                # Technical indicators
+                tech_cols = ['RS_4W', 'ADR', 'TargetPrice', 'LossCutPrice']
+                for col in tech_cols:
+                    if col in df_dump.columns:
+                        display_cols.append(col)
+
+                # 컬럼이 있는 경우에만 출력
+                available_cols = [col for col in display_cols if col in df_dump.columns]
+
+                if available_cols:
+                    print("\n")
+                    print(df_dump[available_cols].tail(10).to_string())
+                    print("\n")
+                else:
+                    print("\n[INFO] Signal columns not available in df_dump")
+                    print("       Displaying available Daily data instead:\n")
+
+                    # Fallback: df_D에서 직접 출력
+                    daily_df = df_D[symbol].copy()
+
+                    # 신호 컬럼들 추가 - Generate timeseries signals for all dates
+                    fallback_cols = []
+
+                    # Generate timeseries signals (for last 10 days)
+                    print("\n[DEBUG] Generating timeseries signals...")
+                    print(f"  df_D[{symbol}] shape: {df_D[symbol].shape if symbol in df_D else 'N/A'}")
+                    print(f"  df_W shape: {df_W.get(symbol).shape if symbol in df_W else 'N/A'}")
+                    print(f"  df_RS shape: {df_RS.get(symbol).shape if symbol in df_RS else 'N/A'}")
+                    print(f"  df_F shape: {df_F.get(symbol).shape if symbol in df_F else 'N/A'}")
+                    print(f"  df_E shape: {df_E.get(symbol).shape if symbol in df_E else 'N/A'}")
+
+                    signals_df = signal_service.generate_signals_timeseries(
+                        df_daily=df_D[symbol],
+                        df_weekly=df_W.get(symbol),
+                        df_rs=df_RS.get(symbol),
+                        df_fundamental=df_F.get(symbol),
+                        df_earnings=df_E.get(symbol)
+                    )
+
+                    print(f"[DEBUG] signals_df shape: {signals_df.shape}")
+                    print(f"[DEBUG] signals_df empty: {signals_df.empty}")
+                    if not signals_df.empty:
+                        print(f"[DEBUG] signals_df columns: {signals_df.columns.tolist()}")
+
+                    if not signals_df.empty:
+                        # Join signals with daily data (including target_price and losscut_price)
+                        daily_df = daily_df.join(signals_df[['weekly_signal', 'rs_signal', 'fundamental_signal',
+                                                               'earnings_signal', 'daily_rs_signal', 'signal',
+                                                               'target_price', 'losscut_price']], how='left')
+                        # Rename columns to match expected names
+                        daily_df['wBuySig'] = daily_df['weekly_signal'].fillna(0).astype(int)
+                        daily_df['rsBuySig'] = daily_df['rs_signal'].fillna(0).astype(int)
+                        daily_df['fBuySig'] = daily_df['fundamental_signal'].fillna(0).astype(int)
+                        daily_df['eBuySig'] = daily_df['earnings_signal'].fillna(0).astype(int)
+                        daily_df['dBuySig'] = daily_df['daily_rs_signal'].fillna(0).astype(int)
+                        daily_df['BuySig'] = daily_df['signal'].fillna(0).astype(int)
+                        daily_df['SellSig'] = 0  # TODO: implement sell signal in timeseries
+
+                        # Use timeseries target_price and losscut_price (already calculated for each date)
+                        daily_df['TargetPrice'] = daily_df['target_price'].fillna(0)
+                        daily_df['LossCutPrice'] = daily_df['losscut_price'].fillna(0)
+
+                        # Drop intermediate columns
+                        daily_df = daily_df.drop(columns=['weekly_signal', 'rs_signal', 'fundamental_signal',
+                                                           'earnings_signal', 'daily_rs_signal', 'signal',
+                                                           'target_price', 'losscut_price'], errors='ignore')
+                    else:
+                        # Fallback: use single signal value for all dates
+                        daily_df['eBuySig'] = signal_data.get('signal_components', {}).get('earnings', 0)
+                        daily_df['fBuySig'] = signal_data.get('signal_components', {}).get('fundamental', 0)
+                        daily_df['wBuySig'] = signal_data.get('signal_components', {}).get('weekly', 0)
+                        daily_df['rsBuySig'] = signal_data.get('signal_components', {}).get('rs', 0)
+                        daily_df['dBuySig'] = signal_data.get('signal_components', {}).get('daily_rs', 0)
+                        daily_df['BuySig'] = 1 if signal_data.get('final_signal') == 'BUY' else 0
+                        daily_df['SellSig'] = 1 if signal_data.get('final_signal') == 'SELL' else 0
+
+                        # Fallback: use single target/losscut value for all dates
+                        target_price = signal_data.get('target_price', 0)
+                        losscut_price = signal_data.get('losscut_price', 0)
+                        daily_df['TargetPrice'] = target_price
+                        daily_df['LossCutPrice'] = losscut_price
+
+                    fallback_cols.extend(['eBuySig', 'fBuySig', 'wBuySig', 'rsBuySig', 'dBuySig', 'BuySig', 'SellSig'])
+
+                    # 가격 컬럼들만 선택
+                    for col in ['Dhigh', 'Dlow', 'Dopen', 'Dclose', 'ADR']:
+                        if col in daily_df.columns:
+                            fallback_cols.append(col)
+
+                    # RS_4W는 df_RS에서 가져오기
+                    if symbol in df_RS and not df_RS[symbol].empty and 'RS_4W' in df_RS[symbol].columns:
+                        daily_df['RS_4W'] = df_RS[symbol]['RS_4W']
+                        fallback_cols.append('RS_4W')
+
+                    # TargetPrice와 LossCutPrice 컬럼 추가 (이미 위에서 설정됨)
+                    fallback_cols.extend(['TargetPrice', 'LossCutPrice'])
+
+                    if fallback_cols:
+                        print(daily_df[fallback_cols].tail(10).to_string())
+                        print("\n")
+            else:
+                print("\n[INFO] df_dump not available. Displaying Daily data:\n")
+
+                # df_D에서 직접 출력
+                daily_df = df_D[symbol].copy()
+
+                # 신호 컬럼들 추가 - Generate timeseries signals for all dates
+                display_cols = []
+
+                # Generate timeseries signals (for last 10 days)
+                print("\n[DEBUG] Generating timeseries signals (df_dump not available)...")
+                print(f"  df_D[{symbol}] shape: {df_D[symbol].shape if symbol in df_D else 'N/A'}")
+                print(f"  df_W shape: {df_W.get(symbol).shape if symbol in df_W else 'N/A'}")
+                print(f"  df_RS shape: {df_RS.get(symbol).shape if symbol in df_RS else 'N/A'}")
+                print(f"  df_F shape: {df_F.get(symbol).shape if symbol in df_F else 'N/A'}")
+                print(f"  df_E shape: {df_E.get(symbol).shape if symbol in df_E else 'N/A'}")
+
+                signals_df = signal_service.generate_signals_timeseries(
+                    df_daily=df_D[symbol],
+                    df_weekly=df_W.get(symbol),
+                    df_rs=df_RS.get(symbol),
+                    df_fundamental=df_F.get(symbol),
+                    df_earnings=df_E.get(symbol)
+                )
+
+                print(f"[DEBUG] signals_df shape: {signals_df.shape}")
+                print(f"[DEBUG] signals_df empty: {signals_df.empty}")
+                if not signals_df.empty:
+                    print(f"[DEBUG] signals_df columns: {signals_df.columns.tolist()}")
+
+                if not signals_df.empty:
+                    # Join signals with daily data (including target_price and losscut_price)
+                    daily_df = daily_df.join(signals_df[['weekly_signal', 'rs_signal', 'fundamental_signal',
+                                                           'earnings_signal', 'daily_rs_signal', 'signal',
+                                                           'target_price', 'losscut_price']], how='left')
+                    # Rename columns to match expected names
+                    daily_df['wBuySig'] = daily_df['weekly_signal'].fillna(0).astype(int)
+                    daily_df['rsBuySig'] = daily_df['rs_signal'].fillna(0).astype(int)
+                    daily_df['fBuySig'] = daily_df['fundamental_signal'].fillna(0).astype(int)
+                    daily_df['eBuySig'] = daily_df['earnings_signal'].fillna(0).astype(int)
+                    daily_df['dBuySig'] = daily_df['daily_rs_signal'].fillna(0).astype(int)
+                    daily_df['BuySig'] = daily_df['signal'].fillna(0).astype(int)
+                    daily_df['SellSig'] = 0  # TODO: implement sell signal in timeseries
+
+                    # Use timeseries target_price and losscut_price (already calculated for each date)
+                    daily_df['TargetPrice'] = daily_df['target_price'].fillna(0)
+                    daily_df['LossCutPrice'] = daily_df['losscut_price'].fillna(0)
+
+                    # Drop intermediate columns
+                    daily_df = daily_df.drop(columns=['weekly_signal', 'rs_signal', 'fundamental_signal',
+                                                       'earnings_signal', 'daily_rs_signal', 'signal',
+                                                       'target_price', 'losscut_price'], errors='ignore')
+                else:
+                    # Fallback: use single signal value for all dates
+                    daily_df['eBuySig'] = signal_data.get('signal_components', {}).get('earnings', 0)
+                    daily_df['fBuySig'] = signal_data.get('signal_components', {}).get('fundamental', 0)
+                    daily_df['wBuySig'] = signal_data.get('signal_components', {}).get('weekly', 0)
+                    daily_df['rsBuySig'] = signal_data.get('signal_components', {}).get('rs', 0)
+                    daily_df['dBuySig'] = signal_data.get('signal_components', {}).get('daily_rs', 0)
+                    daily_df['BuySig'] = 1 if signal_data.get('final_signal') == 'BUY' else 0
+                    daily_df['SellSig'] = 1 if signal_data.get('final_signal') == 'SELL' else 0
+
+                    # Fallback: use single target/losscut value for all dates
+                    target_price = signal_data.get('target_price', 0)
+                    losscut_price = signal_data.get('losscut_price', 0)
+                    daily_df['TargetPrice'] = target_price
+                    daily_df['LossCutPrice'] = losscut_price
+
+                display_cols.extend(['eBuySig', 'fBuySig', 'wBuySig', 'rsBuySig', 'dBuySig', 'BuySig', 'SellSig'])
+
+                # 가격 컬럼들 선택
+                for col in ['Dhigh', 'Dlow', 'Dopen', 'Dclose', 'ADR']:
+                    if col in daily_df.columns:
+                        display_cols.append(col)
+
+                # RS_4W는 df_RS에서 가져오기
+                if symbol in df_RS and not df_RS[symbol].empty and 'RS_4W' in df_RS[symbol].columns:
+                    daily_df['RS_4W'] = df_RS[symbol]['RS_4W']
+                    display_cols.append('RS_4W')
+
+                # TargetPrice와 LossCutPrice 컬럼 추가 (이미 위에서 설정됨)
+                display_cols.extend(['TargetPrice', 'LossCutPrice'])
+
+                if display_cols:
+                    print(daily_df[display_cols].tail(10).to_string())
+                    print("\n")
+
+        print("="*60)
+
+        # Report Agent를 통한 개별 종목 차트 생성 (Option 2)
+        try:
+            print("\n[Report Agent] 종목 시그널 차트 생성 중...")
+            report = get_report_agent(config)
+
+            # 데이터 준비
+            stock_data = df_D[symbol] if symbol in df_D else None
+            buy_signals = pd.DataFrame()
+            sell_signals = pd.DataFrame()
+
+            if stock_data is not None and 'BuySig' in signal_data:
+                if signal_data.get('BuySig', 0) > 0:
+                    buy_signals = pd.DataFrame([{
+                        'Date': stock_data.index[-1] if not stock_data.empty else datetime.now(),
+                        'Price': signal_data.get('entry_price', 0),
+                        'Signal_Type': signal_data.get('signal_type', 'BUY')
+                    }])
+
+            chart_path = report.generate_stock_signal_chart(
+                ticker=symbol,
+                stock_data=stock_data,
+                buy_signals=buy_signals,
+                sell_signals=sell_signals,
+                save=True
+            )
+            if chart_path:
+                print(f"[Report Agent] 차트 생성 완료: {chart_path}")
+        except Exception as e:
+            logger.warning(f"종목 차트 생성 실패: {e}")
+
+        # QuantStats 터미널 리포트 출력 (Option 2 추가)
+        if symbol in df_D and not df_D[symbol].empty:
+            try:
+                print("\n[QuantStats Report] 성과 분석 리포트 생성 중...")
+
+                # Create portfolio value series from stock price data
+                stock_prices = df_D[symbol].copy()
+
+                # Ensure DatetimeIndex
+                if 'Date' in stock_prices.columns:
+                    stock_prices['Date'] = pd.to_datetime(stock_prices['Date'])
+                    stock_prices = stock_prices.set_index('Date')
+                elif not isinstance(stock_prices.index, pd.DatetimeIndex):
+                    # Try to convert index to datetime
+                    try:
+                        stock_prices.index = pd.to_datetime(stock_prices.index)
+                    except:
+                        logger.warning(f"Could not convert {symbol} index to datetime, skipping QuantStats report")
+                        stock_prices = None
+
+                if stock_prices is not None:
+                    # Get close prices
+                    if 'Dclose' in stock_prices.columns:
+                        portfolio_value = stock_prices['Dclose'].copy()
+                    elif 'close' in stock_prices.columns:
+                        portfolio_value = stock_prices['close'].copy()
+                    else:
+                        # Use ad_close if available
+                        for col in ['ad_close', 'Dclose', 'close']:
+                            if col in stock_prices.columns:
+                                portfolio_value = stock_prices[col].copy()
+                                break
+                        else:
+                            logger.warning(f"No valid price column found for {symbol}")
+                            portfolio_value = None
+
+                    if portfolio_value is not None:
+                        # Normalize to start from 100000 (initial capital)
+                        portfolio_value = portfolio_value / portfolio_value.iloc[0] * 100000
+
+                        # Ensure DatetimeIndex
+                        if isinstance(portfolio_value.index, pd.DatetimeIndex):
+                            # Print terminal report with SPY benchmark
+                            print_quantstats_terminal_report(
+                                portfolio_value=portfolio_value,
+                                benchmark='SPY',
+                                title=f"{symbol} Performance vs SPY Benchmark"
+                            )
+                        else:
+                            logger.warning(f"{symbol} portfolio value index is not DatetimeIndex")
+
+            except Exception as e:
+                logger.warning(f"QuantStats 터미널 리포트 생성 실패: {e}")
+                import traceback
+                traceback.print_exc()
+
         return signal_data
 
     except Exception as e:
@@ -1031,7 +1779,7 @@ async def run_auto_backtest(config: dict):
         symbols=symbols,
         start_date=start_date.strftime('%Y-%m-%d'),
         end_date=end_date.strftime('%Y-%m-%d'),
-        initial_cash=100000.0,
+        initial_cash=100_000_000.0,  # 100M
         config=config
     )
 
@@ -1055,7 +1803,7 @@ async def show_ticker_signal_timeline(config: dict):
     symbols_input = input("종목 코드: ").strip().upper()
 
     if not symbols_input:
-        print("❌ 종목 코드를 입력해주세요.")
+        print("[ERROR] 종목 코드를 입력해주세요.")
         return
 
     symbols = [s.strip() for s in symbols_input.split(',')]
@@ -1088,20 +1836,32 @@ async def show_ticker_signal_timeline(config: dict):
 
     try:
         # Try NASDAQ first, then NYSE
-        markets_to_try = ['NASDAQ', 'NYSE']
+        # Note: Market codes must match database_name_calculator.py expectations
+        # 'NAS' -> NasDataBase_*, 'NYS' -> NysDataBase_*
+        markets_to_try = [
+            ('NAS', 'NASDAQ'),   # (market_code, display_name)
+            ('NYS', 'NYSE')
+        ]
         all_final_candidates = []
         all_loaded_data_combined = {}
 
-        for market in markets_to_try:
-            print(f"\n[Staged Pipeline] {market}에서 시그널 생성 중...")
+        # Merge staged pipeline config with main config
+        pipeline_config = config.copy()
+        if 'staged_pipeline' in config:
+            pipeline_config.update(config['staged_pipeline'])
+
+        for market_code, market_name in markets_to_try:
+            print(f"\n[Staged Pipeline] {market_name}에서 시그널 생성 중...")
 
             try:
                 pipeline = StagedPipelineService(
-                    config=config,
-                    market=market,
+                    config=pipeline_config,
+                    market=market_code,  # Use correct market code (NAS/NYS)
                     area='US',
                     start_day=data_start,
-                    end_day=end_date
+                    end_day=end_date,
+                    is_backtest=True,  # Backtest mode: prevent future reference in Highest calculations
+                    execution_mode='analysis'  # Menu 4: Signal Timeline uses D-1 data for breakout analysis
                 )
 
                 pipeline_results = pipeline.run_staged_pipeline(symbols)
@@ -1110,7 +1870,7 @@ async def show_ticker_signal_timeline(config: dict):
                 final_candidates = pipeline_results.get('final_candidates', [])
 
                 if final_candidates:
-                    print(f"   ✅ {market}에서 {len(final_candidates)}개 종목 발견: {', '.join(final_candidates)}")
+                    print(f"   [OK] {market_name}에서 {len(final_candidates)}개 종목 발견: {', '.join(final_candidates)}")
                     all_final_candidates.extend(final_candidates)
 
                     # Collect data from this market
@@ -1123,10 +1883,10 @@ async def show_ticker_signal_timeline(config: dict):
                                         all_loaded_data_combined[symbol] = {}
                                     all_loaded_data_combined[symbol][stage] = df
                 else:
-                    print(f"   ℹ️  {market}에서 해당 종목을 찾을 수 없습니다.")
+                    print(f"   [INFO] {market_name}에서 해당 종목을 찾을 수 없습니다.")
 
             except Exception as market_error:
-                print(f"   ⚠️  {market} 조회 중 오류: {market_error}")
+                print(f"   [WARNING] {market_name} 조회 중 오류: {market_error}")
                 continue
 
         # Remove duplicates
@@ -1149,7 +1909,7 @@ async def show_ticker_signal_timeline(config: dict):
             print("\n[WARNING] 일봉 데이터가 있는 종목이 없습니다.")
             return
 
-        print(f"\n✅ 시그널 생성 완료: {len(symbols_with_d_data)}개 종목")
+        print(f"\n[OK] 시그널 생성 완료: {len(symbols_with_d_data)}개 종목")
         print(f"   종목: {', '.join(symbols_with_d_data)}")
 
         # 타임라인 출력
@@ -1159,45 +1919,150 @@ async def show_ticker_signal_timeline(config: dict):
 
         _print_ticker_signal_timeline(all_loaded_data_combined, symbols_with_d_data, num_days=100)
 
+        # Report Agent를 통한 시그널 타임라인 차트 생성 (Option 4)
+        try:
+            print("\n[Report Agent] 시그널 타임라인 차트 생성 중...")
+            report = get_report_agent(config)
+
+            for symbol in symbols_with_d_data[:3]:  # 상위 3개 종목
+                if symbol in all_loaded_data_combined:
+                    stage_data = all_loaded_data_combined[symbol]
+
+                    # 신호 데이터 준비
+                    signals_df = pd.DataFrame()
+                    if 'D' in stage_data:
+                        df_D = stage_data['D']
+                        if 'BuySig' in df_D.columns:
+                            buy_dates = df_D[df_D['BuySig'] > 0].index
+                            for date in buy_dates:
+                                signals_df = pd.concat([signals_df, pd.DataFrame({
+                                    'Date': [date],
+                                    'Stage': ['D'],
+                                    'Signal': ['BUY']
+                                })])
+
+                    timeline_path = report.generate_signal_timeline_chart(
+                        ticker=symbol,
+                        signals_data=signals_df,
+                        save=True
+                    )
+                    if timeline_path:
+                        print(f"[Report Agent] {symbol} 타임라인 차트 생성: {timeline_path}")
+        except Exception as e:
+            logger.warning(f"시그널 타임라인 차트 생성 실패: {e}")
+
+        # QuantStats 터미널 리포트 출력 (Option 4 추가)
+        try:
+            print("\n[QuantStats Report] 포트폴리오 성과 분석 리포트 생성 중...")
+
+            # Create combined portfolio from all symbols with D data
+            portfolio_returns_list = []
+
+            for symbol in symbols_with_d_data[:5]:  # Top 5 symbols for portfolio
+                if symbol in all_loaded_data_combined and 'D' in all_loaded_data_combined[symbol]:
+                    df_D = all_loaded_data_combined[symbol]['D'].copy()
+
+                    # Ensure DatetimeIndex
+                    if 'Date' in df_D.columns:
+                        df_D['Date'] = pd.to_datetime(df_D['Date'])
+                        df_D = df_D.set_index('Date')
+                    elif not isinstance(df_D.index, pd.DatetimeIndex):
+                        # Try to convert index to datetime
+                        try:
+                            df_D.index = pd.to_datetime(df_D.index)
+                        except:
+                            logger.warning(f"Could not convert {symbol} index to datetime")
+                            continue
+
+                    # Get close prices
+                    if 'close' in df_D.columns:
+                        prices = df_D['close']
+                    elif 'Dclose' in df_D.columns:
+                        prices = df_D['Dclose']
+                    else:
+                        continue
+
+                    # Calculate returns for this symbol
+                    returns = prices.pct_change().fillna(0)
+                    portfolio_returns_list.append(returns)
+
+            if portfolio_returns_list:
+                # Equal-weighted portfolio
+                portfolio_returns = sum(portfolio_returns_list) / len(portfolio_returns_list)
+
+                # Convert to portfolio value starting from 100000
+                portfolio_value = (1 + portfolio_returns).cumprod() * 100000
+
+                # Ensure DatetimeIndex
+                if not isinstance(portfolio_value.index, pd.DatetimeIndex):
+                    logger.warning("Portfolio value index is not DatetimeIndex, skipping QuantStats report")
+                else:
+                    # Print terminal report with SPY benchmark
+                    print_quantstats_terminal_report(
+                        portfolio_value=portfolio_value,
+                        benchmark='SPY',
+                        title=f"Portfolio Performance ({len(portfolio_returns_list)} Stocks) vs SPY"
+                    )
+            else:
+                logger.warning("No valid price data for QuantStats report")
+
+        except Exception as e:
+            logger.warning(f"QuantStats 터미널 리포트 생성 실패: {e}")
+            import traceback
+            traceback.print_exc()
+
         print("\n" + "="*60)
         print("시그널 타임라인 출력 완료")
         print("="*60)
 
     except Exception as e:
-        print(f"\n❌ 오류 발생: {e}")
+        print(f"\n[ERROR] 오류 발생: {e}")
         import traceback
         traceback.print_exc()
 
-async def run_auto_trading(config: dict):
-    """실거래 자동 트레이딩 실행"""
+async def run_auto_trading(config: dict, account_type: str = None, execute_orders: bool = None):
+    """
+    실거래 자동 트레이딩 실행
+
+    Args:
+        config: 시스템 설정
+        account_type: 'virtual' (모의 계좌) 또는 'real' (실제 계좌), None이면 대화형으로 선택
+        execute_orders: 실제 주문 실행 여부, None이면 대화형으로 선택
+    """
     print("\n" + "="*60)
-    print("⚠️  자동 트레이딩 모드")
+    print("[WARNING] 자동 트레이딩 모드")
     print("="*60)
 
-    # 계좌 타입 선택 (단일 프롬프트)
-    print("\n계좌 타입을 선택하세요:")
-    print("1. 모의 계좌 (Paper Trading)")
-    print("2. 실제 계좌 (Live Trading - 실제 주문 실행)")
-    print("0. 취소")
+    # 계좌 타입이 지정되지 않은 경우 대화형으로 선택
+    if account_type is None:
+        print("\n계좌 타입을 선택하세요:")
+        print("1. 모의 계좌 (Paper Trading)")
+        print("2. 실제 계좌 (Live Trading - 실제 주문 실행)")
+        print("0. 취소")
 
-    account_choice = input("\n선택 (0-2): ").strip()
+        account_choice = input("\n선택 (0-2): ").strip()
 
-    if account_choice == '0':
-        print("❌ 자동 트레이딩이 취소되었습니다.")
-        return None
-    elif account_choice == '1':
-        account_type = 'virtual'
-        print("\n✅ 모의 계좌 모드로 실행합니다.")
-    elif account_choice == '2':
-        account_type = 'real'
-        print("\n⚠️  실제 계좌 모드 - 실제 주문이 실행됩니다!")
-        final_confirm = input("정말 실행하시겠습니까? (YES 입력 필요): ").strip()
-        if final_confirm != 'YES':
-            print("❌ 실계좌 트레이딩이 취소되었습니다.")
+        if account_choice == '0':
+            print("[ERROR] 자동 트레이딩이 취소되었습니다.")
+            return None
+        elif account_choice == '1':
+            account_type = 'virtual'
+            print("\n[OK] 모의 계좌 모드로 실행합니다.")
+        elif account_choice == '2':
+            account_type = 'real'
+            print("\n[WARNING] 실제 계좌 모드 - 실제 주문이 실행됩니다!")
+            final_confirm = input("정말 실행하시겠습니까? (YES 입력 필요): ").strip()
+            if final_confirm != 'YES':
+                print("[ERROR] 실계좌 트레이딩이 취소되었습니다.")
+                return None
+        else:
+            print("[ERROR] 잘못된 선택입니다.")
             return None
     else:
-        print("❌ 잘못된 선택입니다.")
-        return None
+        # 파라미터로 전달된 경우
+        print(f"\n[OK] {account_type} 계좌 모드로 실행합니다 (자동 모드).")
+        if account_type == 'real':
+            print("[WARNING] 실제 계좌 모드 - 실제 주문이 실행됩니다!")
 
     print("\n" + "="*60)
     print(f"자동 트레이딩 시작 ({account_type} 계좌)")
@@ -1209,12 +2074,12 @@ async def run_auto_trading(config: dict):
 
     try:
         # 1. 유니버스 선정을 위한 데이터 로드
-        print("\n[1/4] 종목 유니버스 로드 중...")
+        print("\n[1/7] 종목 유니버스 로드 중...")
         symbols = await get_symbols_from_mongodb(config, mode=BACKTEST_MODE)
         print(f"로드된 종목: {len(symbols)}개")
 
         # 2. 데이터 프레임 생성
-        print("\n[2/4] 데이터 프레임 생성 중...")
+        print("\n[2/7] 데이터 프레임 생성 중...")
         df_generator = DataFrameGenerator(
             universe=symbols,
             market='US',
@@ -1239,7 +2104,7 @@ async def run_auto_trading(config: dict):
         print(f"데이터 생성 완료: {len(available_symbols)}개 종목")
 
         # 3. 매매 시그널 생성
-        print("\n[3/4] 매매 시그널 생성 중...")
+        print("\n[3/7] 매매 시그널 생성 중...")
         signal_service = SignalGenerationService(config)
 
         # 각 종목별로 시그널 생성
@@ -1279,31 +2144,600 @@ async def run_auto_trading(config: dict):
 
         print(f"매수 신호 종목: {len(buy_signals)}개")
 
-        if not buy_signals:
-            print("\n⚪ 현재 매수 신호가 있는 종목이 없습니다.")
+        # 4. 매수 신호 종목 표시 (있는 경우에만)
+        if buy_signals:
+            print("\n[4/7] 매수 신호 종목 리스트")
+            print("="*60)
+            print(f"{'종목':<10} {'신호강도':<10} {'현재가':<12} {'손절가':<12} {'목표가':<12}")
+            print("-"*60)
+
+            sorted_signals = sorted(buy_signals.items(), key=lambda x: x[1]['signal_strength'], reverse=True)
+            for symbol, data in sorted_signals[:20]:  # 상위 20개만 표시
+                print(f"{symbol:<10} {data['signal_strength']:<10.2f} ${data['close']:<11.2f} "
+                      f"${data['loss_cut']:<11.2f} ${data['target']:<11.2f}")
+
+            print("="*60)
+        else:
+            print("\n[4/7] 매수 신호 없음 - 보유 종목 모니터링만 수행")
+            sorted_signals = []
+
+        # 5. KIS API Helper 초기화 (계좌 조회 및 주문 실행용)
+        print("\n[5/7] KIS API 초기화 중...")
+
+        # Check if KIS API credentials are configured
+        has_kis_credentials = config.get('app_key') and config.get('app_secret')
+
+        kis_api = None
+        execute_real_orders = False
+
+        if has_kis_credentials:
+            try:
+                kis_api = KISUSHelper(config)
+                if kis_api.make_token():
+                    print(f"[OK] KIS API 인증 성공")
+
+                    # execute_orders 파라미터로 주문 실행 여부 결정
+                    if execute_orders is True:
+                        execute_real_orders = True
+                        print(f"[WARNING] 실제 주문 실행 모드 활성화")
+                    elif execute_orders is False:
+                        execute_real_orders = False
+                        print(f"[INFO] 모니터링 전용 모드 (주문 실행 안함)")
+                    else:
+                        # execute_orders가 None인 경우 (대화형 모드)
+                        execute_real_orders = False
+                        print(f"[INFO] 모니터링 전용 모드 (주문 실행 안함)")
+                else:
+                    print(f"[WARNING] KIS API 인증 실패. 시뮬레이션 모드로 전환")
+                    execute_real_orders = False
+                    kis_api = None
+            except Exception as e:
+                print(f"[ERROR] KIS API 초기화 실패: {e}")
+                print(f"[INFO] 시뮬레이션 모드로 전환")
+                execute_real_orders = False
+                kis_api = None
+        else:
+            # KIS API credentials are archived - skip real API initialization for now
+            # Use simulation mode for monitoring and signal detection
+            execute_real_orders = False
+            kis_api = None
+            print(f"[INFO] 시뮬레이션 모드로 실행 (KIS API credentials not configured)")
+            print(f"[INFO] 실시간 가격 모니터링 및 신호 감지만 수행합니다")
+
+        # 6. PositionManager 초기화 (Strategy Layer)
+        print("\n[6/7] PositionManager 초기화 중...")
+        position_manager = PositionManager(config)
+        print(f"[OK] PositionManager 초기화 완료")
+
+        # 7. 실시간 모니터링 + 자동 매매 시작
+        print("\n[7/7] 실시간 가격 모니터링 + 자동 매매 시작...")
+
+        # 모니터링할 종목 및 트레이딩 데이터 준비
+        # 1) 매수 신호 종목 (상위 10개)
+        buy_candidates = {}
+        for symbol, data in sorted_signals[:10]:
+            buy_candidates[symbol] = {
+                'target_price': data['target'],
+                'quantity': 100,  # 기본 100주
+                'status': 'waiting',  # waiting, ordered, filled
+                'signal_strength': data['signal_strength']
+            }
+
+        # 2) 현재 보유 중인 종목 (KIS API에서 조회)
+        held_positions = {}
+
+        if kis_api:
+            # 실제 계좌의 보유 종목 조회 (주문 실행 여부와 무관하게 조회)
+            print(f"\n[INFO] 계좌 보유 종목 조회 중...")
+            try:
+                holdings = kis_api.get_holdings(currency="USD")
+                print(f"[OK] 보유 종목 {len(holdings)}개 조회 완료")
+
+                # 신호 데이터를 딕셔너리로 변환 (빠른 조회를 위해)
+                signal_dict = {symbol: data for symbol, data in sorted_signals}
+
+                for holding in holdings:
+                    symbol = holding['symbol']
+                    avg_price = holding['avg_price']
+                    quantity = int(holding['quantity'])
+                    current_price = holding['current_price']
+
+                    # 해당 종목의 신호 데이터가 있으면 사용, 없으면 기본값
+                    if symbol in signal_dict:
+                        signal_data = signal_dict[symbol]
+                        target_price = signal_data['target']
+                        losscut_price = signal_data['loss_cut']
+                    else:
+                        # 기본 익절/손절: +20%, -3%
+                        target_price = avg_price * 1.20
+                        losscut_price = avg_price * 0.97
+
+                    # AGain 초기화 (현재 수익률)
+                    initial_again = current_price / avg_price if avg_price > 0 else 1.0
+
+                    held_positions[symbol] = {
+                        'symbol': symbol,
+                        'quantity': quantity,
+                        'avg_price': avg_price,
+                        'current_price': current_price,
+                        'target_price': target_price,
+                        'losscut_price': losscut_price,
+                        'status': 'holding',
+                        'market_value': current_price * quantity,
+                        'profit_loss': holding['profit_loss'],
+                        'profit_rate': holding['profit_rate'],
+                        'again': initial_again,  # 누적 수익률 (PositionManager용)
+                        'risk': config.get('market_specific_configs', {}).get('US', {}).get('std_risk_per_trade', 0.05)
+                    }
+
+                    print(f"  - {symbol}: {quantity}주 @ ${avg_price:.2f} "
+                          f"(현재: ${current_price:.2f}, "
+                          f"익절: ${target_price:.2f}, "
+                          f"손절: ${losscut_price:.2f})")
+
+            except Exception as e:
+                print(f"[ERROR] 보유 종목 조회 실패: {e}")
+                print(f"[INFO] 시뮬레이션 보유 종목 사용")
+
+        # 시뮬레이션 모드이거나 실제 조회 실패 시: 상위 3개를 보유 중으로 가정
+        if not held_positions:
+            if sorted_signals:
+                print(f"\n[INFO] 시뮬레이션 보유 종목 생성 (상위 3개)")
+                for symbol, data in sorted_signals[:3]:
+                    held_positions[symbol] = {
+                        'symbol': symbol,
+                        'quantity': 100,
+                        'avg_price': data['close'],
+                        'current_price': data['close'],
+                        'target_price': data['target'],
+                        'losscut_price': data['loss_cut'],
+                        'status': 'holding',
+                        'market_value': data['close'] * 100,
+                        'profit_loss': 0,
+                        'profit_rate': 0,
+                        'again': 1.0,  # 초기 수익률
+                        'risk': config.get('market_specific_configs', {}).get('US', {}).get('std_risk_per_trade', 0.05)
+                    }
+                    print(f"  - {symbol}: 100주 @ ${data['close']:.2f} "
+                          f"(익절: ${data['target']:.2f}, 손절: ${data['loss_cut']:.2f})")
+            else:
+                # 테스트를 위한 mock 보유 종목 생성
+                print(f"\n[INFO] 테스트용 mock 보유 종목 생성")
+                mock_holdings = [
+                    {'symbol': 'AAPL', 'price': 180.00, 'qty': 100},
+                    {'symbol': 'MSFT', 'price': 380.00, 'qty': 50},
+                    {'symbol': 'GOOGL', 'price': 140.00, 'qty': 75}
+                ]
+                for mock in mock_holdings:
+                    symbol = mock['symbol']
+                    price = mock['price']
+                    qty = mock['qty']
+                    held_positions[symbol] = {
+                        'symbol': symbol,
+                        'quantity': qty,
+                        'avg_price': price,
+                        'current_price': price,
+                        'target_price': price * 1.10,  # +10%
+                        'losscut_price': price * 0.97,  # -3%
+                        'status': 'holding',
+                        'market_value': price * qty,
+                        'profit_loss': 0,
+                        'profit_rate': 0,
+                        'again': 1.0,  # 초기 수익률
+                        'risk': config.get('market_specific_configs', {}).get('US', {}).get('std_risk_per_trade', 0.05)
+                    }
+                    print(f"  - {symbol}: {qty}주 @ ${price:.2f} "
+                          f"(익절: ${price * 1.10:.2f}, 손절: ${price * 0.97:.2f})")
+
+        # 3) 전체 모니터링 종목
+        all_monitored = list(set(buy_candidates.keys()) | set(held_positions.keys()))
+
+        print(f"\n{'='*60}")
+        print(f"웹소켓 모니터링 대상 등록")
+        print(f"{'='*60}")
+        print(f"\n[매수 대기 종목: {len(buy_candidates)}개]")
+        for symbol in list(buy_candidates.keys())[:5]:
+            candidate = buy_candidates[symbol]
+            print(f"  - {symbol}: 목표가 ${candidate['target_price']:.2f}")
+
+        print(f"\n[보유 종목: {len(held_positions)}개]")
+        total_market_value = sum(pos['market_value'] for pos in held_positions.values())
+        total_profit_loss = sum(pos['profit_loss'] for pos in held_positions.values())
+        for symbol, position in list(held_positions.items())[:10]:
+            print(f"  - {symbol}: {position['quantity']}주 @ ${position['avg_price']:.2f} "
+                  f"→ ${position['current_price']:.2f} "
+                  f"(손익: ${position['profit_loss']:.2f}, {position['profit_rate']:.2f}%)")
+        if len(held_positions) > 0:
+            print(f"\n  [총 보유 가치: ${total_market_value:,.2f}, "
+                  f"손익: ${total_profit_loss:,.2f}]")
+
+        print(f"\n[전체 웹소켓 감시: {len(all_monitored)}개 종목]")
+        print(f"{'='*60}")
+
+        # 모니터링 대상이 하나도 없으면 종료
+        if not all_monitored:
+            print("\n[WARNING] 모니터링할 종목이 없습니다.")
+            print("  - 매수 신호가 없고 보유 종목도 없습니다.")
+            print("  - 프로그램을 종료합니다.")
             return None
 
-        # 4. 매수 신호 종목 표시
-        print("\n[4/4] 매수 신호 종목 리스트")
+        # 가격 업데이트 콜백 함수 정의
+        async def on_price_update(price_data):
+            """
+            가격 업데이트 시 호출되는 콜백
+
+            Args:
+                price_data: PriceData 객체 (symbol, price, volume, timestamp 등 포함)
+            """
+            # PriceData에서 symbol과 price 추출
+            symbol = price_data.symbol
+            current_price = price_data.price
+
+            # 매수 대기 종목 체크
+            if symbol in buy_candidates:
+                candidate = buy_candidates[symbol]
+                if candidate['status'] == 'waiting':
+                    # 목표가 이하로 떨어지면 매수 (또는 목표가에 도달하면 매수)
+                    # 여기서는 현재가가 목표가에 근접하면 매수로 가정
+                    if abs(current_price - candidate['target_price']) / candidate['target_price'] < 0.01:
+                        print(f"\n[BUY SIGNAL] {symbol}: ${current_price:.2f} (Target: ${candidate['target_price']:.2f})")
+
+                        if execute_real_orders:
+                            # 실제 주문 실행
+                            result = kis_api.make_buy_limit_order(
+                                stock_code=symbol,
+                                amt=candidate['quantity'],
+                                price=current_price
+                            )
+
+                            if result.get('success', False):
+                                print(f"[OK] {symbol} 매수 주문 체결: {candidate['quantity']}주 @ ${current_price:.2f}")
+                                candidate['status'] = 'filled'
+                                # 보유 종목으로 이동
+                                held_positions[symbol] = {
+                                    'quantity': candidate['quantity'],
+                                    'avg_price': current_price,
+                                    'target_price': candidate['target_price'],
+                                    'losscut_price': current_price * 0.97,  # 3% 손절
+                                    'status': 'holding'
+                                }
+                            else:
+                                print(f"[ERROR] {symbol} 매수 주문 실패: {result.get('error', 'Unknown')}")
+                        else:
+                            print(f"[SIMULATION] {symbol} 매수 주문 (실제 주문 비활성화)")
+
+            # 보유 종목 익절/손절 체크
+            if symbol in held_positions:
+                position = held_positions[symbol]
+                if position['status'] == 'holding':
+                    # PositionManager를 통해 AGain 및 손절가 업데이트 (트레일링 스탑)
+                    updated_position = position_manager.update_position_status(
+                        position=position,
+                        current_price=current_price
+                    )
+                    # 업데이트된 포지션 정보 반영
+                    held_positions[symbol] = updated_position
+                    position = updated_position  # 로컬 변수도 업데이트
+
+                    # 익절: 목표가 도달
+                    if current_price >= position['target_price']:
+                        print(f"\n[TAKE PROFIT] {symbol}: ${current_price:.2f} >= ${position['target_price']:.2f}")
+
+                        if execute_real_orders:
+                            result = kis_api.make_sell_limit_order(
+                                stock_code=symbol,
+                                amt=position['quantity'],
+                                price=current_price
+                            )
+
+                            if result.get('success', False):
+                                profit = (current_price - position['avg_price']) * position['quantity']
+                                profit_pct = ((current_price - position['avg_price']) / position['avg_price']) * 100
+                                print(f"[OK] {symbol} 익절 매도: +${profit:.2f} ({profit_pct:+.2f}%)")
+                                position['status'] = 'sold'
+                            else:
+                                print(f"[ERROR] {symbol} 매도 주문 실패: {result.get('error', 'Unknown')}")
+                        else:
+                            print(f"[SIMULATION] {symbol} 익절 매도 (실제 주문 비활성화)")
+
+                    # 손절: 손절가 도달
+                    elif current_price <= position['losscut_price']:
+                        print(f"\n[STOP LOSS] {symbol}: ${current_price:.2f} <= ${position['losscut_price']:.2f}")
+
+                        if execute_real_orders:
+                            result = kis_api.make_sell_limit_order(
+                                stock_code=symbol,
+                                amt=position['quantity'],
+                                price=current_price
+                            )
+
+                            if result.get('success', False):
+                                loss = (current_price - position['avg_price']) * position['quantity']
+                                loss_pct = ((current_price - position['avg_price']) / position['avg_price']) * 100
+                                print(f"[OK] {symbol} 손절 매도: ${loss:.2f} ({loss_pct:+.2f}%)")
+                                position['status'] = 'sold'
+                            else:
+                                print(f"[ERROR] {symbol} 매도 주문 실패: {result.get('error', 'Unknown')}")
+                        else:
+                            print(f"[SIMULATION] {symbol} 손절 매도 (실제 주문 비활성화)")
+
+        # 미국 장 시간 체크 함수 (LivePriceService 초기화 전 정의)
+        def is_market_open() -> bool:
+            """미국 장이 열려있는지 체크 (동부 시간 기준)"""
+            import pytz
+
+            eastern = pytz.timezone('America/New_York')
+            now_eastern = datetime.now(eastern)
+
+            # 주말 체크
+            if now_eastern.weekday() >= 5:  # Saturday = 5, Sunday = 6
+                return False
+
+            # 장 시간: 09:30 ~ 16:00 (동부 시간)
+            market_open = now_eastern.replace(hour=9, minute=30, second=0)
+            market_close = now_eastern.replace(hour=16, minute=0, second=0)
+
+            return market_open <= now_eastern <= market_close
+
+        # 마켓 오픈 여부 체크
+        if not is_market_open():
+            import pytz
+
+            eastern = pytz.timezone('America/New_York')
+            now_eastern = datetime.now(eastern)
+            day_name = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][now_eastern.weekday()]
+
+            print("\n" + "="*60)
+            print("[MARKET CLOSED]")
+            print("="*60)
+            print(f"Current Time (ET): {now_eastern.strftime('%Y-%m-%d %H:%M:%S')} ({day_name})")
+            print(f"\nMarket Status: CLOSED")
+
+            if now_eastern.weekday() >= 5:
+                print(f"Reason: Weekend ({day_name})")
+                next_open = "Monday 09:30 ET"
+            else:
+                print(f"Reason: Outside trading hours (09:30-16:00 ET)")
+                if now_eastern.hour < 9 or (now_eastern.hour == 9 and now_eastern.minute < 30):
+                    next_open = f"Today 09:30 ET"
+                else:
+                    next_open = "Next trading day 09:30 ET"
+
+            print(f"Next Market Open: {next_open}")
+            print("="*60)
+            print("\n[INFO] WebSocket service will not start during market closed hours.")
+            print("[INFO] Auto-trading program terminated.")
+            return None
+
+        # LivePriceService 초기화 및 구독
+        live_price_service = LivePriceService(config)
+        await live_price_service.start_service()
+
+        # 모니터링 대상 종목의 실제 현재가를 초기값으로 설정
+        from project.models.trading_models import PriceData, MarketType
+
+        print(f"\n[INFO] 초기 가격 설정 중...")
+
+        # 1. 보유 종목의 실제 현재가 설정
+        for symbol in held_positions.keys():
+            position = held_positions[symbol]
+
+            # previous_day_data도 실제 현재가로 설정 (시뮬레이션 기준값)
+            live_price_service.previous_day_data[symbol] = position['current_price']
+
+            # 실제 현재가로 PriceData 초기화
+            initial_price_data = PriceData(
+                symbol=symbol,
+                price=position['current_price'],
+                volume=0,
+                timestamp=datetime.now(),
+                change=0.0,
+                change_pct=0.0,
+                market=MarketType.NASDAQ if symbol not in ['GH'] else MarketType.NYSE
+            )
+            live_price_service.price_cache[symbol] = initial_price_data
+            print(f"  - {symbol}: ${position['current_price']:.2f} (보유 종목)")
+
+        # 2. 매수 대기 종목의 현재가 설정
+        for symbol in buy_candidates.keys():
+            if symbol not in live_price_service.price_cache:
+                candidate = buy_candidates[symbol]
+                current_close = candidate.get('close', candidate['target_price'])
+
+                # previous_day_data도 현재 종가로 설정
+                live_price_service.previous_day_data[symbol] = current_close
+
+                initial_price_data = PriceData(
+                    symbol=symbol,
+                    price=current_close,
+                    volume=0,
+                    timestamp=datetime.now(),
+                    change=0.0,
+                    change_pct=0.0,
+                    market=MarketType.NASDAQ
+                )
+                live_price_service.price_cache[symbol] = initial_price_data
+                print(f"  - {symbol}: ${current_close:.2f} (매수 대기)")
+
+        print(f"[OK] 초기 가격 설정 완료: {len(live_price_service.price_cache)}개 종목")
+
+        # 모든 종목 구독
+        for symbol in all_monitored:
+            await live_price_service.subscribe_price_updates(
+                symbol,
+                on_price_update
+            )
+
+        # 실시간 모니터링 대시보드 출력 함수
+        def print_monitoring_dashboard():
+            """실시간 가격 모니터링 대시보드 출력"""
+            import os
+            # 화면 클리어 (Windows: cls, Unix: clear)
+            # os.system('cls' if os.name == 'nt' else 'clear')
+
+            print("\n" + "="*110)
+            print(f"{'실시간 모니터링 대시보드':^110}")
+            print(f"{'업데이트: ' + datetime.now().strftime('%Y-%m-%d %H:%M:%S'):^110}")
+            print("="*110)
+
+            # 보유 종목 모니터링
+            if held_positions:
+                print(f"\n{'[보유 종목]':^110}")
+                print("-"*110)
+                print(f"{'종목':<8} {'수량':>6} {'평균가':>10} {'현재가':>10} {'손익':>12} {'손익률':>8} "
+                      f"{'AGain':>7} {'목표가':>10} {'손절가':>10} {'상태':<10}")
+                print("-"*110)
+
+                total_value = 0
+                total_pnl = 0
+
+                for symbol, pos in held_positions.items():
+                    if pos['status'] == 'holding':
+                        # LivePriceService에서 현재가 조회
+                        current_price = pos['current_price']
+                        if symbol in live_price_service.price_cache:
+                            current_price = live_price_service.price_cache[symbol].price
+
+                        market_value = current_price * pos['quantity']
+                        pnl = (current_price - pos['avg_price']) * pos['quantity']
+                        pnl_pct = ((current_price - pos['avg_price']) / pos['avg_price']) * 100
+
+                        total_value += market_value
+                        total_pnl += pnl
+
+                        # AGain 값
+                        again = pos.get('again', 1.0)
+
+                        # 목표가/손절가 대비 위치
+                        target_dist = ((pos['target_price'] - current_price) / current_price) * 100
+                        losscut_dist = ((current_price - pos['losscut_price']) / pos['losscut_price']) * 100
+
+                        # 트레일링 스탑 활성화 여부: 손절가가 기본 손절(avg_price × 0.97)보다 높으면 활성
+                        basic_losscut = pos['avg_price'] * 0.97
+                        trailing_active = pos['losscut_price'] > basic_losscut
+
+                        # 상태 표시 (트레일링 스탑 활성화 표시)
+                        if pnl_pct >= 0:
+                            if trailing_active:  # 트레일링 스탑 활성 (손절가가 올라간 상태)
+                                status = f"[UP+T] +{pnl_pct:.2f}%"
+                            else:
+                                status = f"[UP] +{pnl_pct:.2f}%"
+                        else:
+                            status = f"[DOWN] {pnl_pct:.2f}%"
+
+                        print(f"{symbol:<8} {pos['quantity']:>6} ${pos['avg_price']:>9.2f} ${current_price:>9.2f} "
+                              f"${pnl:>10.2f} {pnl_pct:>7.2f}% {again:>6.3f} "
+                              f"${pos['target_price']:>9.2f} ${pos['losscut_price']:>9.2f} {status:<12}")
+
+                print("-"*110)
+                print(f"{'총계':<8} {'':<6} {'':<10} {'':<10} ${total_pnl:>10.2f} "
+                      f"{(total_pnl / (total_value - total_pnl) * 100) if (total_value - total_pnl) != 0 else 0:>7.2f}% "
+                      f"{'':<7} {'(총 가치: $' + f'{total_value:,.2f})':<32}")
+                print("="*110)
+
+            # 매수 대기 종목
+            waiting_count = sum(1 for c in buy_candidates.values() if c['status'] == 'waiting')
+            if waiting_count > 0:
+                print(f"\n[매수 대기: {waiting_count}개]", end=" ")
+                waiting_symbols = [s for s, c in buy_candidates.items() if c['status'] == 'waiting']
+                print(", ".join(waiting_symbols[:5]))
+                if waiting_count > 5:
+                    print(f"  ...외 {waiting_count - 5}개")
+
+            # 장 상태
+            market_status = "[OPEN] 장중" if is_market_open() else "[CLOSED] 장마감"
+            print(f"\n장 상태: {market_status} | 실행 모드: {'[REAL] 실제 주문' if execute_real_orders else '[SIM] 시뮬레이션'}")
+            print("="*110)
+
+        # 장 시간 동안 계속 모니터링
+        print("\n" + "="*60)
+        print("[INFO] 실시간 모니터링 + 자동 매매 시작")
         print("="*60)
-        print(f"{'종목':<10} {'신호강도':<10} {'현재가':<12} {'손절가':<12} {'목표가':<12}")
-        print("-"*60)
-
-        sorted_signals = sorted(buy_signals.items(), key=lambda x: x[1]['signal_strength'], reverse=True)
-        for symbol, data in sorted_signals[:20]:  # 상위 20개만 표시
-            print(f"{symbol:<10} {data['signal_strength']:<10.2f} ${data['close']:<11.2f} "
-                  f"${data['loss_cut']:<11.2f} ${data['target']:<11.2f}")
-
+        print(f"실행 모드: {'[REAL] 실제 주문 실행' if execute_real_orders else '[SIMULATION] 시뮬레이션'}")
+        print("종료: Ctrl+C")
         print("="*60)
 
-        # 주문 실행 정보
-        print("\n💡 주문 실행 정보:")
-        print("   ⚠️  실제 주문 실행 기능은 아직 구현되지 않았습니다.")
-        print("   📌 주문 실행을 위해서는 KIS API 연동이 필요합니다.")
-        print("\n   TODO: 실제 주문 실행 로직 구현")
-        print("   - KIS API를 통한 주문 전송")
-        print("   - 포지션 관리")
-        print("   - 손절/익절 자동 주문")
+        try:
+            iteration = 0
+            last_dashboard_time = datetime.now()
+            last_market_check_time = datetime.now()
+
+            while True:
+                iteration += 1
+
+                # 1분마다 마켓 오픈 상태 체크
+                current_time = datetime.now()
+                if (current_time - last_market_check_time).total_seconds() >= 60:
+                    if not is_market_open():
+                        import pytz
+                        eastern = pytz.timezone('America/New_York')
+                        now_eastern = datetime.now(eastern)
+
+                        print("\n" + "="*60)
+                        print("[MARKET CLOSED - AUTO SHUTDOWN]")
+                        print("="*60)
+                        print(f"Current Time (ET): {now_eastern.strftime('%Y-%m-%d %H:%M:%S')}")
+                        print(f"Market has closed at 16:00 ET")
+                        print("[INFO] Stopping WebSocket service...")
+                        print("[INFO] Auto-trading program will terminate.")
+                        print("="*60)
+                        break
+                    last_market_check_time = current_time
+
+                # 10초마다 실시간 대시보드 출력
+                if (current_time - last_dashboard_time).total_seconds() >= 10:
+                    print_monitoring_dashboard()
+                    last_dashboard_time = current_time
+
+                await asyncio.sleep(1)
+
+        except KeyboardInterrupt:
+            print("\n\n[INFO] 사용자에 의해 모니터링 중지")
+
+        # 모니터링 중지
+        await live_price_service.stop_service()
+        print("\n[OK] 실시간 모니터링 종료")
+
+        # Report Agent를 통한 트레이딩 모니터 대시보드 생성
+        try:
+            print("\n[7/7] Report Agent로 트레이딩 모니터 대시보드 생성 중...")
+            report = get_report_agent(config)
+
+            # 현재 보유 포지션에 손익 정보 추가
+            dashboard_positions = []
+            for symbol, pos in held_positions.items():
+                if pos['status'] == 'holding':
+                    # 현재가는 live_price_service에서 조회 (여기서는 평균가로 시뮬레이션)
+                    current_price = pos['avg_price']  # TODO: 실제 현재가 조회
+                    pnl = (current_price - pos['avg_price']) * pos['quantity']
+                    pnl_percent = ((current_price - pos['avg_price']) / pos['avg_price']) * 100
+
+                    dashboard_positions.append({
+                        'symbol': symbol,
+                        'quantity': pos['quantity'],
+                        'avg_price': pos['avg_price'],
+                        'current_price': current_price,
+                        'target_price': pos['target_price'],
+                        'losscut_price': pos['losscut_price'],
+                        'pnl': pnl,
+                        'pnl_percent': pnl_percent
+                    })
+
+            # 매수 대기 종목
+            pending_buy_orders = [symbol for symbol, c in buy_candidates.items() if c['status'] == 'waiting']
+
+            monitor_path = report.generate_trading_monitor_dashboard(
+                positions=dashboard_positions,
+                pending_orders=pending_buy_orders,
+                market_status={'status': 'OPEN', 'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')},
+                save=True
+            )
+            if monitor_path:
+                print(f"[Report Agent] 모니터 대시보드 생성 완료: {monitor_path}")
+                print(f"  - 보유 포지션: {len(dashboard_positions)}개")
+                print(f"  - 대기 주문: {len(pending_buy_orders)}개")
+        except Exception as e:
+            logger.warning(f"트레이딩 모니터 대시보드 생성 실패: {e}")
 
         print("\n" + "="*60)
         print("자동 트레이딩 세션 종료")
@@ -1312,7 +2746,7 @@ async def run_auto_trading(config: dict):
         return buy_signals
 
     except Exception as e:
-        print(f"❌ 오류 발생: {e}")
+        print(f"[ERROR] 오류 발생: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -1322,11 +2756,12 @@ def show_menu():
     print("\n" + "="*60)
     print("AI Trading System - 메뉴 선택")
     print("="*60)
-    print("\n1. 자동 백테스트 실행 (전체 종목)")
-    print("2. 개별 종목 시그널 확인")
-    print("3. 오토 트레이딩 시스템 (실거래)")
-    print("4. 개별 티커 시그널 타임라인 (W/D/RS/E/F)")
-    print("5. 종료")
+    print("\n1. 자동 백테스트 실행 (Backtest + Dashboard)")
+    print("2. 개별 종목 시그널 확인 (Stock Signal + Chart)")
+    print("3. 오토 트레이딩 시스템 (Auto Trading + Monitor)")
+    print("4. 개별 티커 시그널 타임라인 (Signal Timeline Chart)")
+    print("5. Report Agent 상태 확인")
+    print("6. 종료")
     print("\n" + "="*60)
 
 async def main():
@@ -1343,7 +2778,7 @@ async def main():
         show_menu()
 
         try:
-            choice = input("\n선택 (1-5): ").strip()
+            choice = input("\n선택 (1-6): ").strip()
 
             if choice == '1':
                 # 자동 백테스트
@@ -1355,7 +2790,7 @@ async def main():
                 if symbol:
                     await check_single_symbol_signal(symbol, config)
                 else:
-                    print("❌ 종목 코드를 입력해주세요.")
+                    print("[ERROR] 종목 코드를 입력해주세요.")
 
             elif choice == '3':
                 # 오토 트레이딩 시스템
@@ -1366,17 +2801,52 @@ async def main():
                 await show_ticker_signal_timeline(config)
 
             elif choice == '5':
+                # Report Agent 상태 확인
+                print("\n" + "="*60)
+                print("Report Agent Status")
+                print("="*60)
+
+                try:
+                    agent = get_report_agent(config)
+                    status = agent.get_summary()
+
+                    print(f"\n[Report Agent 정보]")
+                    print(f"  Output Directory: {status.get('output_directory', 'N/A')}")
+                    print(f"  MongoDB Connected: {status.get('mongodb_connected', False)}")
+
+                    # 생성된 차트 목록
+                    recent_charts = status.get('recent_charts', [])
+                    if recent_charts:
+                        print(f"\n[최근 생성된 차트] ({len(recent_charts)}개)")
+                        for i, chart in enumerate(recent_charts[:5], 1):  # 최근 5개만 표시
+                            print(f"  {i}. {chart}")
+                    else:
+                        print("\n[최근 생성된 차트] 없음")
+
+                    # 가능한 기능 목록
+                    capabilities = status.get('capabilities', [])
+                    if capabilities:
+                        print(f"\n[사용 가능한 기능]")
+                        for cap in capabilities:
+                            print(f"  - {cap}")
+
+                except Exception as e:
+                    print(f"[ERROR] Report Agent 상태 확인 실패: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+            elif choice == '6':
                 print("\n프로그램을 종료합니다.")
                 break
 
             else:
-                print("❌ 1-5 사이의 숫자를 입력해주세요.")
+                print("[ERROR] 1-6 사이의 숫자를 입력해주세요.")
 
         except KeyboardInterrupt:
             print("\n\n프로그램을 종료합니다.")
             break
         except Exception as e:
-            print(f"❌ 오류 발생: {e}")
+            print(f"[ERROR] 오류 발생: {e}")
             import traceback
             traceback.print_exc()
 

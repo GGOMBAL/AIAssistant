@@ -4,7 +4,7 @@ Staged Pipeline Service - Service Layer
 단계별 필터링 파이프라인 통합 서비스
 
 Complete workflow: Database → Indicator → Strategy
-E → F → W → RS → D
+W → F → E → RS → D
 """
 
 import pandas as pd
@@ -25,15 +25,16 @@ class StagedPipelineService:
     단계별 필터링 파이프라인 서비스
 
     Complete Flow:
-    1. Load E data (all symbols) → Generate E signals → Filter
-    2. Load F data (E-passed symbols) → Generate F signals → Filter
-    3. Load W data (F-passed symbols) → Generate W signals → Filter
-    4. Load RS data (W-passed symbols) → Generate RS signals → Filter
+    1. Load W data (all symbols) → Generate W signals → Filter
+    2. Load F data (W-passed symbols) → Generate F signals → Filter
+    3. Load E data (F-passed symbols) → Generate E signals → Filter
+    4. Load RS data (E-passed symbols) → Generate RS signals → Filter
     5. Load D data (RS-passed symbols) → Generate D signals → Final candidates
     """
 
     def __init__(self, config: dict, market: str = 'US', area: str = 'US',
-                 start_day: datetime = None, end_day: datetime = None):
+                 start_day: datetime = None, end_day: datetime = None, is_backtest: bool = False,
+                 execution_mode: str = 'live'):
         """
         Initialize staged pipeline service
 
@@ -43,22 +44,30 @@ class StagedPipelineService:
             area: Area identifier
             start_day: Start date
             end_day: End date
+            is_backtest: True for backtest mode (prevents future reference), False for live trading
+            execution_mode: 'live' for real-time trading (menu 3),
+                          'analysis' for historical analysis (menu 1, 2, 4)
         """
         self.config = config
         self.market = market
         self.area = area
         self.start_day = start_day or (datetime.now() - timedelta(days=365*3))
         self.end_day = end_day or datetime.now()
+        self.execution_mode = execution_mode
 
         # Initialize services
         self.data_loader = StagedDataLoader(
             market=market,
             area=area,
             start_day=start_day,
-            end_day=end_day
+            end_day=end_day,
+            is_backtest=is_backtest
         )
 
-        self.signal_service = StagedSignalService(config=config)
+        self.signal_service = StagedSignalService(
+            config=config,
+            execution_mode=execution_mode
+        )
 
         # Performance tracking
         self.performance_stats = {}
@@ -85,26 +94,26 @@ class StagedPipelineService:
         }
 
         try:
-            # ========== Stage 1: Earnings (E) ==========
+            # ========== Stage 1: Weekly (W) ==========
             logger.info("\n" + "="*80)
-            logger.info("Stage 1: Earnings Filter")
+            logger.info("Stage 1: Weekly Filter")
             logger.info("="*80)
             stage1_start = time.time()
 
-            # Load E data for all symbols
-            df_E = self.data_loader.load_stage_E(initial_universe)
-            logger.info(f"Loaded E data: {len(df_E)} symbols")
+            # Load W data for all symbols
+            df_W = self.data_loader.load_stage_W(initial_universe)
+            logger.info(f"Loaded W data: {len(df_W)} symbols")
 
-            # Generate E signals
-            stage1_result = self.signal_service._stage_earnings_signal(initial_universe, df_E)
-            results['stages']['E'] = stage1_result
+            # Generate W signals
+            stage1_result = self.signal_service._stage_weekly_signal(initial_universe, df_W)
+            results['stages']['W'] = stage1_result
 
             stage1_time = time.time() - stage1_start
             logger.info(f"Stage 1 complete: {stage1_result.total_passed}/{stage1_result.total_input} passed ({stage1_time:.2f}s)")
 
             # If no symbols passed, stop pipeline
             if stage1_result.total_passed == 0:
-                logger.warning("No symbols passed Stage 1 (Earnings)")
+                logger.warning("No symbols passed Stage 1 (Weekly)")
                 results['final_candidates'] = []
                 results['total_candidates'] = 0
                 return results
@@ -115,7 +124,7 @@ class StagedPipelineService:
             logger.info("="*80)
             stage2_start = time.time()
 
-            # Load F data only for E-passed symbols
+            # Load F data only for W-passed symbols
             stage2_symbols = list(stage1_result.passed_symbols)
             df_F = self.data_loader.load_stage_F(stage2_symbols)
             logger.info(f"Loaded F data: {len(df_F)} symbols")
@@ -133,26 +142,26 @@ class StagedPipelineService:
                 results['total_candidates'] = 0
                 return results
 
-            # ========== Stage 3: Weekly (W) ==========
+            # ========== Stage 3: Earnings (E) ==========
             logger.info("\n" + "="*80)
-            logger.info("Stage 3: Weekly Filter")
+            logger.info("Stage 3: Earnings Filter")
             logger.info("="*80)
             stage3_start = time.time()
 
-            # Load W data only for F-passed symbols
+            # Load E data only for F-passed symbols
             stage3_symbols = list(stage2_result.passed_symbols)
-            df_W = self.data_loader.load_stage_W(stage3_symbols)
-            logger.info(f"Loaded W data: {len(df_W)} symbols")
+            df_E = self.data_loader.load_stage_E(stage3_symbols)
+            logger.info(f"Loaded E data: {len(df_E)} symbols")
 
-            # Generate W signals
-            stage3_result = self.signal_service._stage_weekly_signal(stage2_result.passed_symbols, df_W)
-            results['stages']['W'] = stage3_result
+            # Generate E signals
+            stage3_result = self.signal_service._stage_earnings_signal(stage2_result.passed_symbols, df_E)
+            results['stages']['E'] = stage3_result
 
             stage3_time = time.time() - stage3_start
             logger.info(f"Stage 3 complete: {stage3_result.total_passed}/{stage3_result.total_input} passed ({stage3_time:.2f}s)")
 
             if stage3_result.total_passed == 0:
-                logger.warning("No symbols passed Stage 3 (Weekly)")
+                logger.warning("No symbols passed Stage 3 (Earnings)")
                 results['final_candidates'] = []
                 results['total_candidates'] = 0
                 return results
@@ -163,7 +172,7 @@ class StagedPipelineService:
             logger.info("="*80)
             stage4_start = time.time()
 
-            # Load RS data only for W-passed symbols
+            # Load RS data only for E-passed symbols
             stage4_symbols = list(stage3_result.passed_symbols)
             df_RS = self.data_loader.load_stage_RS(stage4_symbols)
             logger.info(f"Loaded RS data: {len(df_RS)} symbols")
@@ -213,9 +222,9 @@ class StagedPipelineService:
             results['performance'] = {
                 'total_time': f"{pipeline_time:.2f}s",
                 'stage_times': {
-                    'E': f"{stage1_time:.2f}s",
+                    'W': f"{stage1_time:.2f}s",
                     'F': f"{stage2_time:.2f}s",
-                    'W': f"{stage3_time:.2f}s",
+                    'E': f"{stage3_time:.2f}s",
                     'RS': f"{stage4_time:.2f}s",
                     'D': f"{stage5_time:.2f}s"
                 }
@@ -255,11 +264,11 @@ class StagedPipelineService:
         summary += "Filtering Funnel:\n"
         summary += "-"*80 + "\n"
 
-        stages = ['E', 'F', 'W', 'RS', 'D']
+        stages = ['W', 'F', 'E', 'RS', 'D']
         stage_names = {
-            'E': 'Earnings',
-            'F': 'Fundamental',
             'W': 'Weekly',
+            'F': 'Fundamental',
+            'E': 'Earnings',
             'RS': 'Relative Strength',
             'D': 'Daily'
         }
@@ -307,7 +316,7 @@ class StagedPipelineService:
                 final_candidates[symbol] = {}
 
                 # Collect data from all stages
-                for stage in ['E', 'F', 'W', 'RS', 'D']:
+                for stage in ['W', 'F', 'E', 'RS', 'D']:
                     if symbol in all_data.get(stage, {}):
                         final_candidates[symbol][stage] = all_data[stage][symbol]
 
@@ -315,9 +324,12 @@ class StagedPipelineService:
 
     def close(self):
         """Close all connections"""
-        if self.data_loader:
+        if hasattr(self, 'data_loader') and self.data_loader:
             self.data_loader.close()
 
     def __del__(self):
         """Cleanup on deletion"""
-        self.close()
+        try:
+            self.close()
+        except:
+            pass  # Ignore errors during cleanup

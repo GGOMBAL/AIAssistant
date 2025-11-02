@@ -49,11 +49,11 @@ class SellReason(Enum):
 @dataclass
 class BacktestConfig:
     """백테스트 설정"""
-    initial_cash: float = 100.0  # 초기 현금 (억원)
-    max_positions: int = 10      # 최대 보유 종목수
-    slippage: float = 0.002      # 슬리피지 (0.2%)
-    std_risk: float = 0.1        # 표준 리스크 (10%) - refer와 동일
-    init_risk: float = 0.03      # 초기 손절 리스크 (3%)
+    initial_cash: float = 1000.0  # 초기 현금
+    max_positions: int = 10       # 최대 보유 종목수
+    slippage: float = 0.002       # 슬리피지 (0.2%)
+    std_risk: float = 0.05        # RISK (1 unit 버퍼, 5%) - Trailing Stop 기준
+    init_risk: float = 0.03       # 최소 손절 리스크 (3%) - 초기 및 최소 손절가
     half_sell_threshold: float = 0.20  # 50% 매도 임계값 (20%)
     half_sell_risk_multiplier: float = 2.0  # 50% 매도 후 리스크 배수
     enable_whipsaw: bool = True        # 휩쏘 처리 활성화
@@ -265,8 +265,12 @@ class DailyBacktestService:
             daily_results.append(day_result)
             portfolio_history.append(self._copy_portfolio(portfolio))
 
-            # Print daily summary - 모든 거래일 출력
-            if self.config.message_output or (i % 10 == 0):  # 10일마다 출력
+            # Print daily summary - 거래가 있거나 후보가 있을 때 출력
+            if self.config.message_output:
+                # 거래가 있거나, 매수 후보가 있거나, 포지션이 있을 때 출력
+                if day_result.trades or day_result.buy_candidates or portfolio.positions:
+                    self._print_daily_summary(date, portfolio, day_result)
+            elif i % 10 == 0:  # message_output이 false일 때는 10일마다만
                 self._print_daily_summary(date, portfolio, day_result)
 
         # Calculate performance metrics
@@ -447,10 +451,19 @@ class DailyBacktestService:
             if previous_close <= 0:
                 continue
 
+            # IMPORTANT: Update duration before checking sell conditions
+            # This ensures correct holding period calculation even if sold immediately
+            position.duration += 1
+
             # Check loss cut condition
             if low_price < position.losscut_price:
                 sell_price = min(open_price, position.losscut_price) if open_price < position.losscut_price else position.losscut_price
                 gain = (sell_price - previous_close) / previous_close
+
+                if self.config.message_output:
+                    logger.warning(f"{date} - LOSSCUT TRIGGERED: {ticker}, "
+                                 f"Low: ${low_price:.2f} < LossCut: ${position.losscut_price:.2f}, "
+                                 f"Sell: ${sell_price:.2f}")
 
                 trade = self._execute_sell_trade(
                     ticker, position, sell_price, gain, date, SellReason.LOSSCUT, portfolio
@@ -485,6 +498,7 @@ class DailyBacktestService:
 
             else:
                 # Update position for holding (preserved from original remain_stock logic)
+                # Duration was already incremented above, so only update prices
                 self._update_holding_position(ticker, position, current_price, previous_close)
 
         # Remove sold positions
@@ -497,12 +511,13 @@ class DailyBacktestService:
     def _execute_sell_trade(self, ticker: str, position: Position, sell_price: float,
                           gain: float, date: pd.Timestamp, reason: SellReason,
                           portfolio: Portfolio) -> Trade:
-        """Execute a complete sell trade (refer Strategy_M.sell_stock 로직)"""
-        # refer과 동일한 매도 로직
+        """Execute a complete sell trade"""
+        # 누적 수익률 계산 (오늘 gain 포함)
         asset_a_gain_new = position.again * (1 + gain)
 
-        # refer 로직: cash_new += asset_balance_old * (1 + Gain) * (1 - Slippage)
-        return_cash = round(float(position.balance * (1 + gain) * (1 - self.config.slippage)), 3)
+        # 회수 현금 = 원래 투자금 * 누적 수익률 * (1 - 슬리피지)
+        # balance는 원래 투자금, again은 누적 수익률
+        return_cash = round(float(position.balance * asset_a_gain_new * (1 - self.config.slippage)), 3)
 
         # Update portfolio
         portfolio.cash += return_cash
@@ -542,7 +557,8 @@ class DailyBacktestService:
         """Execute half sell trade (preserved from original half_sell_stock logic)"""
         # Calculate half sell metrics
         half_gain = position.again * (1 + gain)
-        half_return_cash = position.balance * 0.5 * half_gain
+        original_half_balance = position.balance * 0.5  # 50% of original balance BEFORE update
+        half_return_cash = original_half_balance * half_gain
 
         # Update portfolio
         portfolio.cash += half_return_cash
@@ -561,7 +577,7 @@ class DailyBacktestService:
             price=sell_price,
             timestamp=date,
             reason=SellReason.HALF_SELL_PROFIT,
-            pnl=half_return_cash - position.balance,
+            pnl=half_return_cash - original_half_balance,  # Correct PnL calculation
             again=half_gain,
             buy_price=position.avg_price,
             holding_days=position.duration,
@@ -577,23 +593,36 @@ class DailyBacktestService:
     def _update_holding_position(self, ticker: str, position: Position,
                                current_price: float, previous_close: float):
         """
-        Update position for holding stocks (refer remain_stock 로직)
+        Update position for holding stocks
         시그널이 0인 경우에도 보유중인 주식의 Gain 업데이트
+
+        NOTE: duration is already incremented in _execute_sell_orders before this method is called
+        NOTE: balance는 원래 투자금 유지, again만 업데이트 (Option 1)
+              market_value = balance * again 으로 계산
         """
-        # refer Strategy_M.remain_stock과 동일한 업데이트 로직
+        old_losscut = position.losscut_price
+
         if previous_close > 0:
             daily_gain = (current_price - previous_close) / previous_close
-            # refer: asset_a_gain_old * (1 + daily_gain)
+            # 수익률만 업데이트 (balance는 원래 투자금 유지)
             position.again *= (1 + daily_gain)
-            # refer: asset_balance_old * (1 + daily_gain)
-            position.balance *= (1 + daily_gain)
 
-        position.duration += 1
+        # Duration is already incremented in _execute_sell_orders (line 452)
+        # No need to increment here to avoid double counting
 
-        # refer CalcLossCutPrice를 사용한 손절가 업데이트
-        position.losscut_price = self._calculate_refer_losscut_price(
+        # 손절가 업데이트 (Trailing Stop)
+        new_losscut = self._calculate_refer_losscut_price(
             position.again, position.losscut_price, position.avg_price, position.risk
         )
+
+        # Trailing Stop이 올라갔는지 로그 출력
+        if new_losscut > old_losscut and self.config.message_output:
+            pnl_pct = (position.again - 1.0) * 100
+            losscut_moved = ((new_losscut / position.avg_price) - 1) * 100
+            logger.info(f"    [TRAILING STOP] {ticker}: LossCut ${old_losscut:.2f} -> ${new_losscut:.2f} "
+                       f"({losscut_moved:+.2f}% from entry) | Current PnL: {pnl_pct:+.2f}%")
+
+        position.losscut_price = new_losscut
 
     def _identify_buy_candidates(self, valid_stocks: List[str], market_data: Dict[str, Dict]) -> List[str]:
         """Identify buy candidates based on signals"""
@@ -735,8 +764,9 @@ class DailyBacktestService:
             self.trade_count += 1
 
             if self.config.message_output:
-                logger.info(f"{date} - BUY: {ticker}, Price: {entry_price:.2f}, "
-                           f"Amount: {input_size:.1f}")
+                losscut_pct = ((losscut_price / entry_price) - 1) * 100
+                logger.info(f"{date} - BUY: {ticker}, Entry: ${entry_price:.2f}, "
+                           f"Amount: ${input_size:.1f}, LossCut: ${losscut_price:.2f} ({losscut_pct:.2f}%)")
 
             return trade
 
@@ -779,23 +809,66 @@ class DailyBacktestService:
             return std_inp_size
 
     def _calculate_refer_losscut_price(self, again: float, losscut_old: float, avg_price: float, risk: float) -> float:
-        """refer Strategy_M.CalcLossCutPrice 로직 구현"""
-        # refer와 동일한 손절가 계산 로직
-        if again < (1 + self.config.std_risk):  # < 1.05 : 0.95
-            cut_line = (1 - self.config.std_risk)
-            losscut_new = avg_price * cut_line
-        else:  # > 1.05 : 1.11 #
-            cut_line = 1 - ((round((again - 1) / risk, 0) - 1) * risk)
-            losscut_new = avg_price * cut_line
+        """
+        Calculate loss cut price with Stepped Trailing Stop logic
 
-        # refer의 min_loss_cut_percentage 적용 (3%)
-        min_cut_line = 1 - 0.03  # refer의 기본 min_loss_cut_percentage
-        min_loss_cut_price = avg_price * min_cut_line
+        Args:
+            again: Current accumulated gain multiplier (1.0 = no gain, 1.15 = 15% gain)
+            losscut_old: Previous loss cut price
+            avg_price: Average entry price
+            risk: RISK parameter (5% = 0.05) - 1 unit buffer
 
-        # 최소 손절가 보장
+        Returns:
+            Updated loss cut price (stepped trailing stop)
+
+        Stepped Trailing Stop Logic:
+            - Profit units = floor(current_profit / RISK)
+            - Losscut = Entry + (profit_units - 1) * RISK
+            - Minimum losscut: -3% from entry
+            - Creates stepped buffer zones, NOT constant percentage
+
+        Example (Entry=$150, RISK=5%):
+            Profit Range    | Units | Losscut   | From Entry
+            +0% ~ +4.99%    | 0     | $145.50   | -3%
+            +5% ~ +9.99%    | 1     | $150.00   | 0%
+            +10% ~ +14.99%  | 2     | $157.50   | +5%
+            +15% ~ +19.99%  | 3     | $165.00   | +10%
+            +20% ~ +24.99%  | 4     | $172.50   | +15%
+
+        Detail Examples:
+            - +3% profit (again=1.03): units=0, Losscut=$145.50 (-3%)
+            - +6% profit (again=1.06): units=1, Losscut=$150.00 (0%)
+            - +8% profit (again=1.08): units=1, Losscut=$150.00 (0%)
+            - +11% profit (again=1.11): units=2, Losscut=$157.50 (+5%)
+        """
+        # Calculate profit units (how many RISK units of profit achieved)
+        profit_units = int((again - 1) / self.config.std_risk)  # floor((profit%) / 5%)
+
+        # CASE 1: No profit unit yet (< 1 RISK = 5% gain)
+        if profit_units < 1:
+            # Initial stop loss at minimum -3% from entry
+            losscut_new = avg_price * (1 - self.config.init_risk)  # 0.97
+
+        # CASE 2: Profit units >= 1 - STEPPED TRAILING STOP ACTIVATED
+        else:
+            # Stepped Trailing Stop: Losscut = Entry + (profit_units - 1) * RISK
+            # This creates stepped buffer zones, not constant percentage
+            losscut_new = avg_price * (1 + (profit_units - 1) * self.config.std_risk)
+
+            # Debug log for trailing stop calculation
+            if self.config.message_output:
+                logger.debug(f"      Trailing: again={again:.3f}, units={profit_units}, "
+                           f"losscut=${losscut_new:.2f} ({((losscut_new/avg_price)-1)*100:+.2f}% from entry)")
+
+        # Apply minimum loss cut percentage (3% from entry)
+        # Never go below -3% even when trailing
+        min_loss_cut_price = avg_price * (1 - self.config.init_risk)  # 0.97
+
+        # Enforce minimum loss cut (-3% 아래로 내려가지 않음)
         if losscut_new < min_loss_cut_price:
             losscut_new = min_loss_cut_price
 
+        # Trailing stop: only move up, never down (손절가는 올라가기만 함)
         if losscut_new > losscut_old:
             return losscut_new
         else:
@@ -839,7 +912,7 @@ class DailyBacktestService:
         date_str = pd.Timestamp(date).strftime('%Y-%m-%d')
 
         # 날짜별 Balance, Win/Loss Ratio, 손익비 출력
-        print(f"{date_str} | "
+        print(f"\n{date_str} | "
               f"Balance: {balance_str} | "
               f"W/L Ratio: {self.CODE}{win_loss_ratio:.2%}{self.RESET} | "
               f"Profit/Loss Ratio: {self.NAME}{profit_loss_ratio:.2f}{self.RESET} | "
@@ -847,6 +920,45 @@ class DailyBacktestService:
               f"Cash: {cash_ratio_str}% | "
               f"Trades: {len(day_result.trades)} | "
               f"Candidates: {len(day_result.buy_candidates)}")
+
+        # Print trade details if any trades occurred
+        if day_result.trades:
+            for trade in day_result.trades:
+                if trade.trade_type == TradeType.BUY:
+                    print(f"  [BUY] {trade.ticker}: ${trade.price:.2f} x {trade.quantity:.0f} shares")
+                elif trade.trade_type == TradeType.SELL:
+                    reason_str = trade.reason.value if trade.reason else "UNKNOWN"
+                    pnl_str = f"+${trade.pnl:.2f}" if trade.pnl >= 0 else f"-${abs(trade.pnl):.2f}"
+                    pnl_pct = ((trade.again or 1.0) - 1.0) * 100
+
+                    # Highlight losscut in red
+                    if trade.reason == SellReason.LOSSCUT:
+                        print(f"  [SELL - {self.COLOR2}{reason_str}{self.RESET}] {trade.ticker}: "
+                              f"${trade.price:.2f} ({pnl_pct:+.2f}%) | "
+                              f"PnL: {self.COLOR2}{pnl_str}{self.RESET} | "
+                              f"Hold: {trade.holding_days or 0} days | "
+                              f"Buy: ${trade.buy_price:.2f}")
+                    else:
+                        print(f"  [SELL - {reason_str}] {trade.ticker}: "
+                              f"${trade.price:.2f} ({pnl_pct:+.2f}%) | "
+                              f"PnL: {pnl_str} | "
+                              f"Hold: {trade.holding_days or 0} days | "
+                              f"Buy: ${trade.buy_price:.2f}")
+                elif trade.trade_type == TradeType.HALF_SELL:
+                    pnl_str = f"+${trade.pnl:.2f}" if trade.pnl >= 0 else f"-${abs(trade.pnl):.2f}"
+                    print(f"  [HALF_SELL] {trade.ticker}: ${trade.price:.2f} | PnL: {pnl_str}")
+
+        # Print current positions with losscut prices
+        if portfolio.positions:
+            print(f"  [Positions]")
+            for ticker, pos in portfolio.positions.items():
+                unrealized_pnl_pct = (pos.again - 1.0) * 100
+                unrealized_pnl_color = self.COLOR if unrealized_pnl_pct >= 0 else self.COLOR2
+                losscut_from_entry_pct = ((pos.losscut_price / pos.avg_price) - 1) * 100
+                print(f"    {ticker}: Avg=${pos.avg_price:.2f} | "
+                      f"Losscut=${pos.losscut_price:.2f} ({losscut_from_entry_pct:+.2f}%) | "
+                      f"PnL: {unrealized_pnl_color}{unrealized_pnl_pct:+.2f}%{self.RESET} | "
+                      f"Hold: {pos.duration:.0f} days")
 
     def _calculate_win_loss_ratio(self, portfolio: Portfolio) -> float:
         """Calculate win/loss ratio"""
@@ -964,7 +1076,7 @@ def create_sample_data(universe: List[str], days: int = 100) -> Dict[str, pd.Dat
 if __name__ == "__main__":
     # Example usage
     config = BacktestConfig(
-        initial_cash=100.0,
+        initial_cash=1000.0,
         max_positions=5,
         message_output=True
     )

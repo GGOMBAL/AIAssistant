@@ -133,26 +133,35 @@ def load_data_from_database(self) -> None
 
 **DataFrame Columns**:
 
-| Column | Type | Description | Example |
-|--------|------|-------------|---------|
-| REV_YOY | float | 매출 전년 대비 성장률 (%) | 15.5 |
-| EPS_YOY | float | EPS 전년 대비 성장률 (%) | 20.3 |
-| MarketCapitalization | float | 시가총액 (USD) | 2500000000 |
-| PBR | float | 주가순자산비율 | 5.2 |
-| PSR | float | 주가매출비율 | 3.8 |
-| ROE | float | 자기자본이익률 (%) | 18.5 |
+| Column | Type | Description | Example | Unit |
+|--------|------|-------------|---------|------|
+| REV_YOY | float | 매출 전년 대비 성장률 | 0.155 | Decimal (0.155 = 15.5%) |
+| EPS_YOY | float | EPS 전년 대비 성장률 | 0.203 | Decimal (0.203 = 20.3%) |
+| REV_QOQ | float | 매출 전분기 대비 성장률 | 0.050 | Decimal (0.050 = 5.0%) |
+| EPS_QOQ | float | EPS 전분기 대비 성장률 | 0.075 | Decimal (0.075 = 7.5%) |
+| MarketCapitalization | float | 시가총액 (USD) | 2500000000 | USD |
+| PBR | float | 주가순자산비율 | 5.2 | Ratio |
+| PSR | float | 주가매출비율 | 3.8 | Ratio |
+| ROE | float | 자기자본이익률 | 0.185 | Decimal (0.185 = 18.5%) |
 
 ### 3.6. Earnings Data (df_E)
 
-**DataFrame Columns**:
+**DataFrame Columns** (Converted from % to decimal format):
 
-| Column | Type | Description | Example |
-|--------|------|-------------|---------|
-| EarningDate | datetime | 실적 발표일 | 2024-01-15 |
-| eps | float | 주당순이익 | 2.50 |
-| eps_yoy | float | EPS 전년 대비 (%) | 25.0 |
-| revenue | float | 매출 (USD) | 50000000 |
-| rev_yoy | float | 매출 전년 대비 (%) | 18.0 |
+| Column | Type | Description | Example | Unit |
+|--------|------|-------------|---------|------|
+| EarningDate | datetime | 실적 발표일 | 2024-01-15 | Date |
+| eps | float | 주당순이익 | 2.50 | USD |
+| eps_yoy | float | EPS 전년 대비 성장률 | 0.250 | Decimal (0.250 = 25.0%) |
+| eps_qoq | float | EPS 전분기 대비 성장률 | 0.100 | Decimal (0.100 = 10.0%) |
+| revenue | float | 매출 (USD) | 50000000 | USD |
+| rev_yoy | float | 매출 전년 대비 성장률 | 0.180 | Decimal (0.180 = 18.0%) |
+| rev_qoq | float | 매출 전분기 대비 성장률 | 0.050 | Decimal (0.050 = 5.0%) |
+
+**Note**: Earnings data (df_E) is automatically converted from percentage format to decimal format in the Indicator Layer.
+- Source data: `eps_yoy = 25.0` (stored as 25%)
+- After conversion: `eps_yoy = 0.25` (decimal format)
+- This ensures consistency with Fundamental data (df_F) which uses decimal format.
 
 ---
 

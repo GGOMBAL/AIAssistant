@@ -34,7 +34,7 @@ sys.path.append(str(PROJECT_ROOT))
 
 from orchestrator.user_input_handler import UserInputHandler
 from orchestrator.main_orchestrator import MainOrchestrator
-from run_agent import RunAgent
+from Test.run_agent import RunAgent
 
 # 로깅 설정
 logging.basicConfig(

@@ -1,0 +1,32 @@
+{
+  "test_date": "2025-10-14T22:04:54.884039",
+  "test_results": {
+    "stock_chart": {
+      "status": "success",
+      "charts": {
+        "chart_file": "visualization_output/AAPL_chart_20251014_220454.html",
+        "signal_chart": "visualization_output/AAPL_signals_20251014_220454.html"
+      },
+      "error": null
+    },
+    "backtest": {
+      "status": "success",
+      "charts": {
+        "dashboard": "visualization_output/backtest_dashboard_20251014_220454.html",
+        "cumulative_returns": "visualization_output/cumulative_returns_20251014_220454.html",
+        "drawdown": "visualization_output/drawdown_20251014_220454.html",
+        "trade_analysis": "visualization_output/trade_analysis_20251014_220454.html",
+        "metrics": "visualization_output/metrics_20251014_220454.html"
+      },
+      "error": null
+    },
+    "portfolio": {
+      "status": "success",
+      "charts": {
+        "holdings": "visualization_output/portfolio_holdings_US_20251014.html",
+        "sectors": "visualization_output/sector_allocation_US_20251014.html"
+      },
+      "error": null
+    }
+  }
+}

@@ -1,0 +1,486 @@
+# Strategy Signal Configuration
+# All signal conditions in one place
+# Version: 2.0 - Multi-Strategy Support
+# Last Updated: 2025-10-18
+
+# =============================================================================
+# ACTIVE STRATEGY SELECTION
+# =============================================================================
+active_strategy: "conservative"  # Options: conservative, balanced, aggressive, custom
+
+# =============================================================================
+# STRATEGY DEFINITIONS
+# =============================================================================
+strategies:
+  # ---------------------------------------------------------------------------
+  # CONSERVATIVE STRATEGY - Large Cap, High Growth
+  # ---------------------------------------------------------------------------
+  conservative:
+    name: "Conservative Strategy - Large Cap High Growth"
+    description: "Stable returns with elite stocks, lower risk"
+
+    # Earnings Signal (E)
+    earnings_signal:
+      enabled: true
+      revenue:
+        min_prev_yoy: 0.05      # Previous quarter minimum revenue YoY (5%)
+        require_growth: true    # Must be growing compared to previous quarter
+      eps:
+        min_prev_yoy: 0.05      # Previous quarter minimum EPS YoY (5%)
+        require_growth: true    # Must be growing compared to previous quarter
+      combination_logic: "OR"   # OR | AND
+
+    # Fundamental Signal (F)
+    fundamental_signal:
+      enabled: true
+      market_cap:
+        min: 10000000000        # 10 Billion USD (Large cap only)
+        max: 2000000000000000     # 2000 Trillion USD
+      revenue:
+        min_yoy: 0.01           # Current quarter minimum revenue YoY (15% - Strict)
+        min_prev_yoy: 0.01      # Previous quarter minimum revenue YoY (5%)
+        min_value: 0
+      eps:
+        min_yoy: 0.01           # Current quarter minimum EPS YoY (15% - Strict)
+        min_prev_yoy: 0.01      # Previous quarter minimum EPS YoY (5%)
+      growth_logic: "OR"        # OR | AND
+
+    # Weekly Signal (W)
+    weekly_signal:
+      enabled: true
+      price_levels:
+        require_1y_eq_2y_high: true   # 1Year_H == 2Year_H
+        require_2y_lt_1y_low: true    # 2Year_L < 1Year_L
+      high_stability:
+        enabled: true
+        factor: 1.1              # 52_H <= 52_H.shift(2) * 1.03 (3% tolerance - Strict)
+        shift_periods: 2
+      low_distance:
+        enabled: true
+        factor: 1.4               # Wclose.shift(1) > 52_L * 1.4 (40% above)
+        shift_periods: 1
+      high_distance:
+        enabled: true
+        factor: 0.7               # Wclose.shift(1) > 52_H * 0.8 (80% of high)
+        shift_periods: 1
+      combination_logic: "AND"
+
+    # RS Signal (Relative Strength)
+    rs_signal:
+      enabled: true
+      threshold: 90               # RS_4W >= 95 (top 5% - Strict)
+      use_t_minus_1: true
+      use_rs_12w: false
+      rs_12w_threshold: 95
+      use_sector_rs: false
+      sector_rs_threshold: 0
+
+    # Daily + RS Combined Signal (D)
+    daily_signal:
+      enabled: true
+      base_conditions:
+        sma200_momentum:
+          enabled: true
+          allow_zero: true        # SMA200_M > 0 OR SMA200_M == 0
+        sma_downtrend:
+          enabled: true           # SMA200 < SMA50
+        rs:
+          enabled: true
+          threshold: 90           # RS_4W >= 95 (Strict)
+      breakout:
+        enabled: true
+        timeframes:
+          - '2Y'
+          - '1Y'
+          - '6M'
+          - '3M'
+          - '1M'
+        stop_at_first: true
+      prices:
+        losscut_ratio: 0.97       # 2% stop loss (Conservative)
+        target_multiplier: 1.0
+      use_t_minus_1: true
+      default_mode: 'analysis'
+
+    # Thresholds
+    thresholds:
+      E: 0.0
+      F: 1.0
+      W: 1.0
+      RS: 1.0
+      D: 1.0
+
+  # ---------------------------------------------------------------------------
+  # BALANCED STRATEGY - Mid Cap, Moderate Growth (CURRENT DEFAULT)
+  # ---------------------------------------------------------------------------
+  balanced:
+    name: "Balanced Strategy - Mid Cap Moderate Growth"
+    description: "Balance of risk and return, current default strategy"
+
+    # Earnings Signal (E)
+    earnings_signal:
+      enabled: false
+      revenue:
+        min_prev_yoy: 0.0       # Previous quarter minimum revenue YoY (0%)
+        require_growth: true
+      eps:
+        min_prev_yoy: 0.0       # Previous quarter minimum EPS YoY (0%)
+        require_growth: true
+      combination_logic: "OR"
+
+    # Fundamental Signal (F)
+    fundamental_signal:
+      enabled: true
+      market_cap:
+        min: 2000000000         # 2 Billion USD
+        max: 20000000000000     # 20 Trillion USD
+      revenue:
+        min_yoy: 0.10           # Current quarter minimum revenue YoY (10%)
+        min_prev_yoy: 0.0       # Previous quarter minimum revenue YoY (0%)
+        min_value: 0
+      eps:
+        min_yoy: 0.10           # Current quarter minimum EPS YoY (10%)
+        min_prev_yoy: 0.0       # Previous quarter minimum EPS YoY (0%)
+      growth_logic: "OR"
+
+    # Weekly Signal (W)
+    weekly_signal:
+      enabled: true
+      price_levels:
+        require_1y_eq_2y_high: true
+        require_2y_lt_1y_low: true
+      high_stability:
+        enabled: true
+        factor: 1.05              # 52_H <= 52_H.shift(2) * 1.05 (5% tolerance)
+        shift_periods: 2
+      low_distance:
+        enabled: true
+        factor: 1.3               # Wclose.shift(1) > 52_L * 1.3 (30% above)
+        shift_periods: 1
+      high_distance:
+        enabled: true
+        factor: 0.7               # Wclose.shift(1) > 52_H * 0.7 (70% of high)
+        shift_periods: 1
+      combination_logic: "AND"
+
+    # RS Signal
+    rs_signal:
+      enabled: true
+      threshold: 90               # RS_4W >= 90 (top 10%)
+      use_t_minus_1: true
+      use_rs_12w: false
+      rs_12w_threshold: 90
+      use_sector_rs: false
+      sector_rs_threshold: 0
+
+    # Daily Signal
+    daily_signal:
+      enabled: true
+      base_conditions:
+        sma200_momentum:
+          enabled: true
+          allow_zero: true
+        sma_downtrend:
+          enabled: true
+        rs:
+          enabled: true
+          threshold: 90           # RS_4W >= 90
+      breakout:
+        enabled: true
+        timeframes:
+          - '2Y'
+          - '1Y'
+          - '6M'
+          - '3M'
+          - '1M'
+        stop_at_first: true
+      prices:
+        losscut_ratio: 0.97       # 3% stop loss
+        target_multiplier: 1.0
+      use_t_minus_1: true
+      default_mode: 'analysis'
+
+    # Thresholds
+    thresholds:
+      E: 1.0
+      F: 1.0
+      W: 1.0
+      RS: 1.0
+      D: 0.5
+
+  # ---------------------------------------------------------------------------
+  # AGGRESSIVE STRATEGY - Small/Mid Cap, Moderate Growth
+  # ---------------------------------------------------------------------------
+  aggressive:
+    name: "Aggressive Strategy - Small/Mid Cap Moderate Growth"
+    description: "High risk high return, many stocks"
+
+    # Earnings Signal (E)
+    earnings_signal:
+      enabled: false
+      revenue:
+        min_prev_yoy: 0.0
+        require_growth: true
+      eps:
+        min_prev_yoy: 0.0
+        require_growth: true
+      combination_logic: "OR"
+
+    # Fundamental Signal (F)
+    fundamental_signal:
+      enabled: true
+      market_cap:
+        min: 500000000          # 500 Million USD (Small/Mid cap)
+        max: 20000000000000     # 20 Trillion USD
+      revenue:
+        min_yoy: 0.05           # 5% growth (Relaxed)
+        min_prev_yoy: 0.0
+        min_value: 0
+      eps:
+        min_yoy: 0.05           # 5% growth (Relaxed)
+        min_prev_yoy: 0.0
+      growth_logic: "OR"
+
+    # Weekly Signal (W)
+    weekly_signal:
+      enabled: true
+      price_levels:
+        require_1y_eq_2y_high: true
+        require_2y_lt_1y_low: true
+      high_stability:
+        enabled: true
+        factor: 1.10              # 10% tolerance (Relaxed)
+        shift_periods: 2
+      low_distance:
+        enabled: true
+        factor: 1.2               # 20% above (Relaxed)
+        shift_periods: 1
+      high_distance:
+        enabled: true
+        factor: 0.6               # 60% of high (Relaxed)
+        shift_periods: 1
+      combination_logic: "AND"
+
+    # RS Signal
+    rs_signal:
+      enabled: true
+      threshold: 80               # RS_4W >= 80 (top 20% - Relaxed)
+      use_t_minus_1: true
+      use_rs_12w: false
+      rs_12w_threshold: 80
+      use_sector_rs: false
+      sector_rs_threshold: 0
+
+    # Daily Signal
+    daily_signal:
+      enabled: true
+      base_conditions:
+        sma200_momentum:
+          enabled: true
+          allow_zero: true
+        sma_downtrend:
+          enabled: true
+        rs:
+          enabled: true
+          threshold: 80           # RS_4W >= 80 (Relaxed)
+      breakout:
+        enabled: true
+        timeframes:
+          - '2Y'
+          - '1Y'
+          - '6M'
+          - '3M'
+          - '1M'
+        stop_at_first: true
+      prices:
+        losscut_ratio: 0.95       # 5% stop loss (Aggressive)
+        target_multiplier: 1.0
+      use_t_minus_1: true
+      default_mode: 'analysis'
+
+    # Thresholds
+    thresholds:
+      E: 1.0
+      F: 1.0
+      W: 1.0
+      RS: 1.0
+      D: 0.5
+
+  # ---------------------------------------------------------------------------
+  # CUSTOM STRATEGY - User Defined
+  # ---------------------------------------------------------------------------
+  custom:
+    name: "Custom Strategy - User Defined"
+    description: "Freely adjustable by user"
+
+    # Earnings Signal (E)
+    earnings_signal:
+      enabled: false
+      revenue:
+        min_prev_yoy: 0.0
+        require_growth: true
+      eps:
+        min_prev_yoy: 0.0
+        require_growth: true
+      combination_logic: "OR"
+
+    # Fundamental Signal (F)
+    fundamental_signal:
+      enabled: true
+      market_cap:
+        min: 2000000000
+        max: 20000000000000
+      revenue:
+        min_yoy: 0.08           # 8% (Adjust as needed)
+        min_prev_yoy: 0.0
+        min_value: 0
+      eps:
+        min_yoy: 0.08           # 8% (Adjust as needed)
+        min_prev_yoy: 0.0
+      growth_logic: "OR"
+
+    # Weekly Signal (W)
+    weekly_signal:
+      enabled: true
+      price_levels:
+        require_1y_eq_2y_high: true
+        require_2y_lt_1y_low: true
+      high_stability:
+        enabled: true
+        factor: 1.05
+        shift_periods: 2
+      low_distance:
+        enabled: true
+        factor: 1.3
+        shift_periods: 1
+      high_distance:
+        enabled: true
+        factor: 0.7
+        shift_periods: 1
+      combination_logic: "AND"
+
+    # RS Signal
+    rs_signal:
+      enabled: true
+      threshold: 85               # 85 (Adjust as needed)
+      use_t_minus_1: true
+      use_rs_12w: false
+      rs_12w_threshold: 85
+      use_sector_rs: false
+      sector_rs_threshold: 0
+
+    # Daily Signal
+    daily_signal:
+      enabled: true
+      base_conditions:
+        sma200_momentum:
+          enabled: true
+          allow_zero: true
+        sma_downtrend:
+          enabled: true
+        rs:
+          enabled: true
+          threshold: 85
+      breakout:
+        enabled: true
+        timeframes:
+          - '2Y'
+          - '1Y'
+          - '6M'
+          - '3M'
+          - '1M'
+        stop_at_first: true
+      prices:
+        losscut_ratio: 0.97
+        target_multiplier: 1.0
+      use_t_minus_1: true
+      default_mode: 'analysis'
+
+    # Thresholds
+    thresholds:
+      E: 1.0
+      F: 1.0
+      W: 1.0
+      RS: 1.0
+      D: 0.5
+
+# =============================================================================
+# FINAL SIGNAL COMBINATION (applies to all strategies)
+# =============================================================================
+final_signal:
+  # Required signals for BUY (US Market)
+  required_signals:
+    weekly: true              # W signal required
+    daily_rs: true            # D signal required
+    rs: true                  # RS signal required
+    fundamental: true         # F signal required
+    earnings: false           # E signal optional
+
+  # Signal strength calculation
+  signal_strength:
+    max_signals: 5            # US market: E, F, W, RS, D
+    weights:
+      earnings: 0.20
+      fundamental: 0.20
+      weekly: 0.20
+      rs: 0.20
+      daily_rs: 0.20
+
+  # Confidence calculation
+  confidence:
+    buy_confidence: 0.7       # Confidence when BUY signal
+    hold_multiplier: 0.5      # Confidence = signal_strength * 0.5 when HOLD
+
+# =============================================================================
+# EXECUTION MODES
+# =============================================================================
+execution_modes:
+  # Backtest mode (Menu 1)
+  backtest:
+    use_staged_pipeline: true
+    execution_mode: 'analysis'  # Use D-1 data
+    is_backtest: true
+
+  # Individual symbol check (Menu 2)
+  symbol_check:
+    use_staged_pipeline: false
+    execution_mode: 'analysis'  # Use D-1 data
+    is_backtest: false
+
+  # Live trading (Menu 3)
+  live_trading:
+    use_staged_pipeline: true
+    execution_mode: 'live'      # Use current day data
+    is_backtest: false
+
+  # Signal timeline (Menu 4)
+  timeline:
+    use_staged_pipeline: true
+    execution_mode: 'analysis'  # Use D-1 data
+    is_backtest: false
+
+# =============================================================================
+# NOTES
+# =============================================================================
+# 1. All percentage values are in decimal format (0.10 = 10%)
+# 2. All USD values are in actual dollars (2000000000 = 2 Billion)
+# 3. Binary signals return 0 or 1
+# 4. Weighted signals return 0.0 ~ 1.0
+# 5. T-1 data means iloc[-2] (previous day/week/quarter)
+# 6. To switch strategies, change active_strategy value at the top
+# 7. Changing any value here requires restarting the application
+
+# =============================================================================
+# QUICK STRATEGY SWITCH GUIDE
+# =============================================================================
+# Conservative: Large cap, high growth, strict filters
+#   active_strategy: "conservative"
+#
+# Balanced: Mid cap, moderate growth (current default)
+#   active_strategy: "balanced"
+#
+# Aggressive: Small/mid cap, relaxed filters, more stocks
+#   active_strategy: "aggressive"
+#
+# Custom: Adjust values freely
+#   active_strategy: "custom"

@@ -259,89 +259,204 @@ class TechnicalIndicatorGenerator:
         return dataframe
     
     def _process_weekly_data(self, dataframe: pd.DataFrame, stock: str, trading: bool) -> pd.DataFrame:
-        """Process weekly data with technical indicators"""
+        """
+        Process weekly data with technical indicators
+        Based on GetTrdData2 W section (lines 146-169)
+        """
         try:
             # Rename columns
             if 'ad_open' in dataframe.columns:
                 dataframe = dataframe.rename(columns={
-                    'ad_open': 'open', 
-                    'ad_close': 'close', 
-                    'ad_high': 'high', 
+                    'ad_open': 'open',
+                    'ad_close': 'close',
+                    'ad_high': 'high',
                     'ad_low': 'low'
                 })
-            
-            # Weekly technical indicators
-            if trading:
-                dataframe['WHighest_2Y'] = self._get_high(dataframe, period=52*2)
-                dataframe['WHighest_1Y'] = self._get_high(dataframe, period=52*1)
-                dataframe['WSMA20'] = self._get_ma(dataframe['close'], 20, 52)
-                dataframe['WSMA50'] = self._get_ma(dataframe['close'], 50, 52)
-            else:
-                dataframe['WHighest_2Y'] = self._get_high(dataframe, period=52*2).shift()
-                dataframe['WHighest_1Y'] = self._get_high(dataframe, period=52*1).shift()
-                dataframe['WSMA20'] = self._get_ma(dataframe['close'], 20, 52).shift()
-                dataframe['WSMA50'] = self._get_ma(dataframe['close'], 50, 52).shift()
-            
+
+            # Calculate weekly indicators - matching GetTrdData2 exactly
+            # 52주 최고가/최저가 (52 weeks)
+            dataframe['52_H'] = self._get_max(dataframe, 52)
+            dataframe['52_L'] = self._get_min(dataframe, 52)
+
+            # 1년/2년 최고가/최저가 (12*4=48 weeks, 24*4=96 weeks)
+            dataframe['1Year_H'] = self._get_max(dataframe, 12*4)
+            dataframe['2Year_H'] = self._get_max(dataframe, 24*4)
+            dataframe['1Year_L'] = self._get_min(dataframe, 12*4)
+            dataframe['2Year_L'] = self._get_min(dataframe, 24*4)
+
             # Rename to weekly format
             dataframe = dataframe.rename(columns={
-                'open': 'Wopen', 
-                'close': 'Wclose', 
-                'high': 'Whigh', 
-                'low': 'Wlow', 
+                'open': 'Wopen',
+                'close': 'Wclose',
+                'high': 'Whigh',
+                'low': 'Wlow',
                 'volume': 'Wvolume'
             })
-            
+
         except Exception as e:
             logger.error(f"Error in weekly data processing for {stock}: {e}")
-            # Set default values
-            for col in ['WHighest_2Y', 'WHighest_1Y', 'WSMA20', 'WSMA50']:
+            # Set default values on error
+            for col in ['52_H', '52_L', '1Year_H', '2Year_H', '1Year_L', '2Year_L']:
                 dataframe[col] = 0
-        
+
         return dataframe
     
     def _process_rs_data(self, dataframe: pd.DataFrame, stock: str, trading: bool) -> pd.DataFrame:
-        """Process relative strength data"""
+        """
+        Process relative strength data
+        Based on GetTrdData2 RS section (lines 171-185)
+        """
         try:
-            # Basic RS processing
-            if trading:
-                dataframe['RS_4W'] = self._get_rs_value(dataframe, 4)
-                dataframe['RS_52W'] = self._get_rs_value(dataframe, 52)
+            # RS_4W의 이동평균 계산
+            if 'RS_4W' in dataframe.columns:
+                if trading:
+                    dataframe['RS_SMA5'] = self._get_ma(dataframe['RS_4W'], 5, 100)
+                    dataframe['RS_SMA20'] = self._get_ma(dataframe['RS_4W'], 20, 100)
+                else:
+                    dataframe['RS_SMA5'] = self._get_ma(dataframe['RS_4W'], 5, 100).shift()
+                    dataframe['RS_SMA20'] = self._get_ma(dataframe['RS_4W'], 20, 100).shift()
             else:
-                dataframe['RS_4W'] = self._get_rs_value(dataframe, 4).shift()
-                dataframe['RS_52W'] = self._get_rs_value(dataframe, 52).shift()
-                
+                dataframe['RS_SMA5'] = 0
+                dataframe['RS_SMA20'] = 0
+
         except Exception as e:
             logger.error(f"Error in RS data processing for {stock}: {e}")
-            dataframe['RS_4W'] = 0
-            dataframe['RS_52W'] = 0
-        
+            dataframe['RS_SMA5'] = 0
+            dataframe['RS_SMA20'] = 0
+
         return dataframe
     
     def _process_fundamental_data(self, dataframe: pd.DataFrame, stock: str, trading: bool) -> pd.DataFrame:
-        """Process fundamental data (US market only)"""
+        """
+        Process fundamental data (US market only)
+        Based on GetTrdData2 F section (lines 187-224)
+        """
         try:
-            # Basic fundamental processing
-            if 'value' in dataframe.columns:
-                if trading:
-                    dataframe['F_MA10'] = dataframe['value'].rolling(window=10).mean()
-                    dataframe['F_MA20'] = dataframe['value'].rolling(window=20).mean()
-                else:
-                    dataframe['F_MA10'] = dataframe['value'].rolling(window=10).mean().shift()
-                    dataframe['F_MA20'] = dataframe['value'].rolling(window=20).mean().shift()
-            
+            # Check if 'close' column exists (needed for most calculations)
+            if 'close' not in dataframe.columns:
+                logger.warning(f"No 'close' column in fundamental data for {stock}")
+                return dataframe
+
+            # Market Capitalization (시가총액)
+            if 'commonStockSharesOutstanding' in dataframe.columns:
+                dataframe['MarketCapitalization'] = dataframe['close'] * dataframe['commonStockSharesOutstanding']
+            else:
+                dataframe['MarketCapitalization'] = 0
+
+            # EPS (Earnings Per Share)
+            if 'netIncome' in dataframe.columns and 'commonStockSharesOutstanding' in dataframe.columns:
+                dataframe['EPS'] = dataframe['netIncome'] / dataframe['commonStockSharesOutstanding']
+            else:
+                dataframe['EPS'] = 0
+
+            # PBR (Price-to-Book Ratio)
+            if 'totalShareholderEquity' in dataframe.columns and 'commonStockSharesOutstanding' in dataframe.columns:
+                book_value_per_share = dataframe['totalShareholderEquity'] / dataframe['commonStockSharesOutstanding']
+                dataframe['PBR'] = dataframe['close'] / book_value_per_share.replace(0, np.nan)
+            else:
+                dataframe['PBR'] = 0
+
+            # PSR (Price-to-Sales Ratio)
+            if 'totalRevenue' in dataframe.columns and 'commonStockSharesOutstanding' in dataframe.columns:
+                sales_per_share = dataframe['totalRevenue'] / dataframe['commonStockSharesOutstanding']
+                dataframe['PSR'] = dataframe['close'] / sales_per_share.replace(0, np.nan)
+            else:
+                dataframe['PSR'] = 0
+
+            # ROE (Return on Equity)
+            if 'netIncome' in dataframe.columns and 'totalShareholderEquity' in dataframe.columns:
+                dataframe['ROE'] = (dataframe['netIncome'] / dataframe['totalShareholderEquity'].replace(0, np.nan)) * 100
+            else:
+                dataframe['ROE'] = 0
+
+            # ROA (Return on Assets)
+            if 'netIncome' in dataframe.columns and 'totalAssets' in dataframe.columns:
+                dataframe['ROA'] = (dataframe['netIncome'] / dataframe['totalAssets'].replace(0, np.nan)) * 100
+            else:
+                dataframe['ROA'] = 0
+
+            # GPA (Gross Profit to Asset Ratio)
+            if 'grossProfit' in dataframe.columns and 'totalAssets' in dataframe.columns:
+                dataframe['GPA'] = (dataframe['grossProfit'] / dataframe['totalAssets'].replace(0, np.nan)) * 100
+            else:
+                dataframe['GPA'] = 0
+
+            # OPM (Operating Profit Margin)
+            if 'operatingIncome' in dataframe.columns and 'totalRevenue' in dataframe.columns:
+                dataframe['OPM'] = (dataframe['operatingIncome'] / dataframe['totalRevenue'].replace(0, np.nan)) * 100
+            else:
+                dataframe['OPM'] = 0
+
+            # EBITDA (Earnings Before Interest, Taxes, Depreciation, and Amortization)
+            if 'operatingIncome' in dataframe.columns and 'depreciationAndAmortization' in dataframe.columns:
+                dataframe['EBITDA'] = dataframe['operatingIncome'] + dataframe['depreciationAndAmortization']
+            else:
+                dataframe['EBITDA'] = 0
+
+            # EV (Enterprise Value)
+            if 'MarketCapitalization' in dataframe.columns and 'totalLiabilities' in dataframe.columns and 'cashAndCashEquivalentsAtCarryingValue' in dataframe.columns:
+                dataframe['EV'] = (dataframe['MarketCapitalization'] +
+                                  dataframe['totalLiabilities'] -
+                                  dataframe['cashAndCashEquivalentsAtCarryingValue'])
+            else:
+                dataframe['EV'] = 0
+
+            # EV/EBITDA
+            if 'EV' in dataframe.columns and 'EBITDA' in dataframe.columns:
+                dataframe['EV/EBITDA'] = dataframe['EV'] / dataframe['EBITDA'].replace(0, np.nan)
+            else:
+                dataframe['EV/EBITDA'] = 0
+
+            # Replace NaN and inf values with 0
+            fundamental_cols = ['MarketCapitalization', 'EPS', 'PBR', 'PSR', 'ROE', 'ROA',
+                              'GPA', 'OPM', 'EBITDA', 'EV', 'EV/EBITDA']
+            for col in fundamental_cols:
+                if col in dataframe.columns:
+                    dataframe[col] = dataframe[col].replace([np.inf, -np.inf], 0).fillna(0)
+
+            # Filter dataframe to keep only valid dates
+            dataframe = dataframe[pd.to_datetime(dataframe.index, errors='coerce').notna()]
+
+            # Drop raw fundamental columns to save memory (optional - matching GetTrdData2 line 219)
+            cols_to_drop = ['grossProfit', 'totalRevenue', 'operatingIncome', 'depreciationAndAmortization',
+                          'ebitda', 'netIncome', 'totalAssets', 'cashAndCashEquivalentsAtCarryingValue',
+                          'totalLiabilities', 'totalShareholderEquity', 'commonStockSharesOutstanding',
+                          'longTermDebt', 'shortTermDebt', 'commonStock', 'retainedEarnings']
+            dataframe = dataframe.drop(columns=[col for col in cols_to_drop if col in dataframe.columns], errors='ignore')
+
         except Exception as e:
             logger.error(f"Error in fundamental data processing for {stock}: {e}")
-            dataframe['F_MA10'] = 0
-            dataframe['F_MA20'] = 0
-        
+            import traceback
+            traceback.print_exc()
+
         return dataframe
     
     # Technical Indicator Calculation Methods
-    
+
     def _get_high(self, dataframe: pd.DataFrame, period: int) -> pd.Series:
         """Calculate rolling high over specified period"""
         if 'high' in dataframe.columns:
             return dataframe['high'].rolling(window=period, min_periods=1).max()
+        return pd.Series(0, index=dataframe.index)
+
+    def _get_max(self, dataframe: pd.DataFrame, period: int) -> pd.Series:
+        """
+        Calculate rolling maximum (high) over specified period
+        Used for weekly data (52_H, 1Year_H, 2Year_H)
+        Based on Common.GetMax from GetTrdData2
+        """
+        if 'high' in dataframe.columns:
+            return dataframe['high'].rolling(window=period, min_periods=1).max()
+        return pd.Series(0, index=dataframe.index)
+
+    def _get_min(self, dataframe: pd.DataFrame, period: int) -> pd.Series:
+        """
+        Calculate rolling minimum (low) over specified period
+        Used for weekly data (52_L, 1Year_L, 2Year_L)
+        Based on Common.GetMin from GetTrdData2
+        """
+        if 'low' in dataframe.columns:
+            return dataframe['low'].rolling(window=period, min_periods=1).min()
         return pd.Series(0, index=dataframe.index)
     
     def _get_ma(self, series: pd.Series, period: int, min_periods: int) -> pd.Series:

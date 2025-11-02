@@ -21,6 +21,7 @@ Strategy Layer는 Indicator Layer에서 제공한 기술지표 데이터를 분�
 
 ### Key Components
 - `SignalGenerationService`: 메인 시그널 생성 서비스
+- `PositionManager`: 포지션 관리 및 손절가 계산 (Stepped Trailing Stop)
 - `PositionSizingService`: 포지션 사이즈 계산
 - `AccountAnalysisService`: 계좌 분석 및 리밸런싱
 
@@ -68,9 +69,11 @@ def generate_comprehensive_signals(
 
 - `df_fundamental` (pd.DataFrame, optional): 펀더멘털 데이터
   - 컬럼: `REV_YOY`, `EPS_YOY`, `MarketCapitalization`, `PBR`, `ROE` 등
+  - **Unit**: Growth rates are in decimal format (0.1 = 10%)
 
 - `df_earnings` (pd.DataFrame, optional): 어닝스 데이터
   - 컬럼: `EarningDate`, `eps`, `eps_yoy`, `revenue`, `rev_yoy` 등
+  - **Unit**: Growth rates are in decimal format (0.25 = 25%), automatically converted by Indicator Layer
 
 **Constraints**:
 - `df_daily`는 최소 200일 이상의 데이터 필요 (SMA200 계산용)
@@ -163,8 +166,10 @@ RS_4W >= 90  # 상위 10% 이내
 3가지 조건을 모두 만족:
 
 1. `MarketCapitalization >= 2B` (시가총액 20억 달러 이상)
-2. `REV_YOY >= 10%` (매출 성장률 10% 이상)
-3. `EPS_YOY >= 10%` (EPS 성장률 10% 이상)
+2. `REV_YOY >= 0.1` (매출 성장률 10% 이상, decimal format)
+3. `EPS_YOY >= 0.1` (EPS 성장률 10% 이상, decimal format)
+
+**Note**: All growth rates use decimal format (0.1 = 10%, 0.25 = 25%)
 
 ### 4.4. 어닝스 신호 (Earnings Signal)
 
@@ -343,3 +348,170 @@ Service Layer (DailyBacktestService / OrderManager)
 - `STRATEGY_MODULES.md`: 전략 모듈 상세 설명
 - `SIGNAL_GENERATION_SPEC.md`: 시그널 생성 알고리즘 상세
 - `docs/INTERFACE_SPECIFICATION.md`: 레이어 간 데이터 인터페이스
+
+---
+
+## 11. PositionManager - Stepped Trailing Stop
+
+### 11.1. Overview
+
+`PositionManager` 클래스는 포지션 관리 및 손절가 계산을 담당합니다. 특히, **Stepped Trailing Stop** 로직을 구현하여 일반적인 트레일링 스탑과 달리 단계별 손절가 보호 구간을 제공합니다.
+
+### 11.2. Initialization
+
+```python
+from project.strategy.position_manager import PositionManager
+
+position_manager = PositionManager(config)
+```
+
+**Config Parameters**:
+```python
+{
+    'market_specific_configs': {
+        'US': {
+            'std_risk_per_trade': 0.05,          # RISK (5% = 1 unit)
+            'min_loss_cut_percentage': 0.03      # Minimum losscut (-3%)
+        }
+    }
+}
+```
+
+### 11.3. Stepped Trailing Stop Logic
+
+**핵심 개념**:
+- **Profit Units**: 수익을 RISK 단위로 나눈 값 (floor 연산)
+- **Stepped Protection**: 수익 단위별로 손절가가 단계적으로 상승
+- **NOT Constant Buffer**: 일반적인 트레일링 스탑과 달리 고정 % 버퍼가 아님
+
+**Formula**:
+```python
+profit_units = int((current_profit) / RISK)
+
+if profit_units < 1:
+    losscut = entry_price * (1 - min_loss_cut_percentage)  # -3% 고정
+else:
+    losscut = entry_price * (1 + (profit_units - 1) * RISK)
+```
+
+**Example Table** (Entry=$150, RISK=5%):
+
+| Profit Range | Profit Units | Losscut Price | From Entry | Protection Zone |
+|--------------|--------------|---------------|------------|-----------------|
+| +0% ~ +4.99% | 0 | $145.50 | -3% | Initial Stop |
+| +5% ~ +9.99% | 1 | $150.00 | 0% | Breakeven |
+| +10% ~ +14.99% | 2 | $157.50 | +5% | Profit Lock 1 |
+| +15% ~ +19.99% | 3 | $165.00 | +10% | Profit Lock 2 |
+| +20% ~ +24.99% | 4 | $172.50 | +15% | Profit Lock 3 |
+
+### 11.4. Key Methods
+
+#### 11.4.1. calc_losscut_price()
+
+```python
+def calc_losscut_price(
+    self,
+    again: float,              # 누적 수익률 (1.0 = 본전, 1.10 = +10%)
+    current_losscut: float,    # 현재 손절가
+    avg_price: float,          # 평균 진입가
+    risk: Optional[float] = None  # RISK (기본: 0.05)
+) -> float:
+    """
+    단계별 트레일링 스탑 손절가 계산
+
+    Returns:
+        새로운 손절가 (현재 손절가보다 높을 때만 업데이트)
+    """
+```
+
+**Behavior**:
+- 손절가는 **올라가기만** 하고 절대 내려가지 않음
+- 최소 손절가 (-3%) 보장
+- 단계별 보호 구간 생성
+
+#### 11.4.2. update_position_status()
+
+```python
+def update_position_status(
+    self,
+    position: Dict[str, Any],  # 현재 포지션 정보
+    current_price: float       # 현재 가격
+) -> Dict[str, Any]:
+    """
+    포지션 상태 업데이트 (AGain 계산 및 손절가 갱신)
+
+    Returns:
+        업데이트된 포지션 정보 (losscut_price, again, profit_loss 등)
+    """
+```
+
+### 11.5. Usage Example
+
+```python
+# 1. PositionManager 초기화
+from project.strategy.position_manager import PositionManager
+
+config = {
+    'market_specific_configs': {
+        'US': {
+            'std_risk_per_trade': 0.05,
+            'min_loss_cut_percentage': 0.03
+        }
+    }
+}
+position_manager = PositionManager(config)
+
+# 2. 포지션 정보
+position = {
+    'symbol': 'AAPL',
+    'quantity': 100,
+    'avg_price': 150.0,
+    'current_price': 150.0,
+    'losscut_price': 145.50,  # Initial: -3%
+    'again': 1.0,
+    'risk': 0.05
+}
+
+# 3. 가격이 +10% 상승 -> $165.00
+updated_position = position_manager.update_position_status(
+    position=position,
+    current_price=165.0
+)
+
+print(f"New Losscut: ${updated_position['losscut_price']:.2f}")
+# Output: $157.50 (진입가 대비 +5%)
+
+# 4. 가격이 +15% 상승 -> $172.50
+updated_position = position_manager.update_position_status(
+    position=updated_position,
+    current_price=172.50
+)
+
+print(f"New Losscut: ${updated_position['losscut_price']:.2f}")
+# Output: $165.00 (진입가 대비 +10%)
+```
+
+### 11.6. Integration Points
+
+**Backtest**:
+- `project/service/daily_backtest_service.py`
+- `_calculate_refer_losscut_price()` 함수에서 동일한 Stepped Trailing Stop 로직 사용
+
+**Auto-Trading**:
+- `main_auto_trade.py`
+- WebSocket 실시간 가격 업데이트 시 `PositionManager.update_position_status()` 호출
+
+### 11.7. Comparison: Traditional vs Stepped Trailing Stop
+
+| Aspect | Traditional Trailing Stop | Stepped Trailing Stop |
+|--------|---------------------------|------------------------|
+| Buffer Type | Constant % from current price | Stepped zones by profit units |
+| Example (+8% profit) | Losscut at +3% (8%-5%) | Losscut at 0% (unit 1) |
+| Example (+11% profit) | Losscut at +6% (11%-5%) | Losscut at +5% (unit 2) |
+| Profit Protection | Linear, smooth | Stepped, zone-based |
+| Risk Control | Fixed % buffer always maintained | Discrete protection levels |
+
+**Why Stepped?**:
+- 명확한 보호 구간 (5% 단위)
+- 과도한 손절 방지 (일시적 조정에 강함)
+- 심리적 안정감 (명확한 목표 지점)

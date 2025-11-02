@@ -36,7 +36,7 @@ class DataFrameGenerator:
     """
     
     def __init__(self, universe: List[str] = None, market: str = 'US', area: str = 'US',
-                 start_day: datetime = None, end_day: datetime = None):
+                 start_day: datetime = None, end_day: datetime = None, is_backtest: bool = False):
         """
         Initialize DataFrameGenerator
 
@@ -46,11 +46,13 @@ class DataFrameGenerator:
             area: Market area (US, KR, etc)
             start_day: Start date for data
             end_day: End date for data
+            is_backtest: True for backtest mode (prevents future reference), False for live trading
         """
         pd.set_option('future.no_silent_downcasting', True)
 
         self.market = market
         self.area = area
+        self.is_backtest = is_backtest
 
         # Set default dates if not provided
         if start_day is None:
@@ -471,8 +473,8 @@ class DataFrameGenerator:
         
         # Remove tickers not in common universe from all dataframes
         self._cleanup_dataframes()
-        
-        # Remove duplicates and apply post-processing
+
+        # Remove duplicates and apply post-processing (includes all technical indicators)
         self._post_process_dataframes()
     
     def _cleanup_dataframes(self) -> None:
@@ -513,75 +515,33 @@ class DataFrameGenerator:
         """Remove duplicates and apply post-processing (based on refer logic)"""
         logger.info("Post-processing dataframes...")
 
-        # Remove duplicates and rename columns
+        # Remove duplicates only (technical indicators will be handled by TechnicalIndicatorGenerator)
         for stock in self.universe:
             try:
-                # Process Weekly data
+                # Process Weekly data - remove duplicates only
                 if stock in self.df_W:
                     self.df_W[stock] = self.df_W[stock][~self.df_W[stock].index.duplicated()]
-                    # Rename columns: open → Wopen, high → Whigh, low → Wlow, close → Wclose
-                    rename_map = {}
-                    if 'open' in self.df_W[stock].columns:
-                        rename_map['open'] = 'Wopen'
-                    if 'high' in self.df_W[stock].columns:
-                        rename_map['high'] = 'Whigh'
-                    if 'low' in self.df_W[stock].columns:
-                        rename_map['low'] = 'Wlow'
-                    if 'close' in self.df_W[stock].columns:
-                        rename_map['close'] = 'Wclose'
-                    if rename_map:
-                        self.df_W[stock].rename(columns=rename_map, inplace=True)
 
-                    # Calculate 52-week high/low
-                    df = self.df_W[stock]
-                    if 'Whigh' in df.columns:
-                        df['52_H'] = df['Whigh'].rolling(window=52, min_periods=1).max()
-                        df['1Year_H'] = df['52_H']  # Alias
-                    if 'Wlow' in df.columns:
-                        df['52_L'] = df['Wlow'].rolling(window=52, min_periods=1).min()
-                        df['1Year_L'] = df['52_L']  # Alias
-
-                # Process RS data
+                # Process RS data - remove duplicates only
                 if stock in self.df_RS:
                     self.df_RS[stock] = self.df_RS[stock][~self.df_RS[stock].index.duplicated()]
 
-                # Process Daily data
+                # Process Daily data - remove duplicates only
                 if stock in self.df_D:
                     self.df_D[stock] = self.df_D[stock][~self.df_D[stock].index.duplicated()]
-                    # Rename columns: ad_open → Dopen, ad_high → Dhigh, ad_low → Dlow, ad_close → Dclose
-                    rename_map = {}
-                    if 'ad_open' in self.df_D[stock].columns:
-                        rename_map['ad_open'] = 'Dopen'
-                    if 'ad_high' in self.df_D[stock].columns:
-                        rename_map['ad_high'] = 'Dhigh'
-                    if 'ad_low' in self.df_D[stock].columns:
-                        rename_map['ad_low'] = 'Dlow'
-                    if 'ad_close' in self.df_D[stock].columns:
-                        rename_map['ad_close'] = 'Dclose'
-                    if rename_map:
-                        self.df_D[stock].rename(columns=rename_map, inplace=True)
-
-                    # Calculate technical indicators for Daily data
-                    df = self.df_D[stock]
-                    if 'Dclose' in df.columns:
-                        # SMA calculations
-                        df['SMA20'] = df['Dclose'].rolling(window=20, min_periods=1).mean()
-                        df['SMA50'] = df['Dclose'].rolling(window=50, min_periods=1).mean()
-                        df['SMA200'] = df['Dclose'].rolling(window=200, min_periods=1).mean()
-
-                        # ADR (Average Daily Range) calculation
-                        if 'Dhigh' in df.columns and 'Dlow' in df.columns:
-                            df['Daily_Range'] = ((df['Dhigh'] - df['Dlow']) / df['Dlow']) * 100
-                            df['ADR'] = df['Daily_Range'].rolling(window=20, min_periods=1).mean()
-
-                        # Highest/Lowest calculations
-                        df['Highest_20'] = df['Dhigh'].rolling(window=20, min_periods=1).max() if 'Dhigh' in df.columns else pd.NA
-                        df['Lowest_20'] = df['Dlow'].rolling(window=20, min_periods=1).min() if 'Dlow' in df.columns else pd.NA
 
                 # US-specific processing
                 if self.area == 'US':
                     if stock in self.df_E:
                         self.df_E[stock] = self.df_E[stock][~self.df_E[stock].index.duplicated()]
+
+                        # Convert earnings percentage data to decimal format
+                        # eps_yoy, eps_qoq, rev_yoy, rev_qoq are stored as % (25.0 = 25%)
+                        # Convert to decimal format (0.25 = 25%) to match fundamental data
+                        percentage_columns = ['eps_yoy', 'eps_qoq', 'rev_yoy', 'rev_qoq']
+                        for col in percentage_columns:
+                            if col in self.df_E[stock].columns:
+                                self.df_E[stock][col] = self.df_E[stock][col] / 100.0
 
                     if stock in self.df_F:
                         self.df_F[stock] = self.df_F[stock][~self.df_F[stock].index.duplicated()]
@@ -592,35 +552,113 @@ class DataFrameGenerator:
         # Reindex and merge fundamental data for US market (based on refer logic)
         if self.area == 'US':
             self._process_fundamental_data()
-    
+
+        # Apply technical indicators processing using TechnicalIndicatorGenerator
+        # This will handle ALL column renaming and indicator calculations
+        self._apply_technical_indicators()
+
+    def _apply_technical_indicators(self) -> None:
+        """
+        Apply technical indicators using TechnicalIndicatorGenerator
+        This processes all dataframes and adds calculated indicators
+        """
+        try:
+            from project.indicator.technical_indicators import TechnicalIndicatorGenerator
+
+            logger.info("Applying technical indicators...")
+
+            # Initialize TechnicalIndicatorGenerator with current dataframes
+            tech_gen = TechnicalIndicatorGenerator(
+                universe=self.universe,
+                area=self.area,
+                df_W=self.df_W,
+                df_D=self.df_D,
+                df_RS=self.df_RS,
+                df_E=self.df_E,
+                df_F=self.df_F,
+                start_day=self.start_day,
+                end_day=self.end_day,
+                trading=not self.is_backtest  # trading=True for live, False for backtest
+            )
+
+            # Get processed dataframes with all technical indicators
+            self.df_D, self.df_W, self.df_RS, self.df_E, self.df_F = tech_gen.return_processed_data()
+
+            logger.info("Technical indicators applied successfully")
+
+        except Exception as e:
+            logger.error(f"Error applying technical indicators: {e}")
+            import traceback
+            traceback.print_exc()
+
     def _process_fundamental_data(self) -> None:
-        """Process fundamental data for US market (based on refer logic)"""
+        """
+        Process fundamental data for US market
+        Join with Daily close prices from XXXDataBase_AD (df_D)
+
+        IMPORTANT: F 데이터는 분기별 인덱스, D 데이터는 일별 인덱스
+        F 데이터의 각 날짜에 맞는 D 데이터의 close 값을 조인해야 함
+        Based on GetTrdData2 F section requirement
+
+        NOTE: At this point, columns are NOT renamed yet (still ad_close, not Dclose)
+        """
         logger.info("Processing US fundamental data...")
-        
+
         for stock in self.universe:
             try:
-                if stock in self.df_F and stock in self.df_W:
-                    # Reindex fundamental data to match weekly data
-                    self.df_F[stock] = self.df_F[stock].reindex(
-                        self.df_W[stock].index, method='ffill'
-                    )
-                    
-                    # Merge with weekly close price
-                    if 'ad_close' in self.df_W[stock].columns:
-                        self.df_F[stock] = pd.concat([
-                            self.df_W[stock]['ad_close'], 
-                            self.df_F[stock]
-                        ], axis=1)
-                    
-                    # Forward fill missing values
+                if stock in self.df_F and stock in self.df_D:
+                    # Get daily close data (columns NOT renamed yet, so use ad_close)
+                    daily_close = None
+                    if 'ad_close' in self.df_D[stock].columns:
+                        daily_close = self.df_D[stock]['ad_close']
+                    elif 'close' in self.df_D[stock].columns:
+                        daily_close = self.df_D[stock]['close']
+                    elif 'Dclose' in self.df_D[stock].columns:
+                        daily_close = self.df_D[stock]['Dclose']
+
+                    if daily_close is None:
+                        logger.warning(f"No close price column found for {stock} in daily data")
+                        continue
+
+                    # Join close prices to fundamental data based on F data's index
+                    # Use merge with nearest date matching (forward fill)
+                    df_f_with_close = self.df_F[stock].copy()
+
+                    # For each fundamental data date, find the corresponding close price
+                    # If exact date match exists, use it; otherwise use nearest previous date
+                    close_values = []
+                    for f_date in df_f_with_close.index:
+                        # Find closest date in daily data that is <= f_date
+                        valid_dates = daily_close.index[daily_close.index <= f_date]
+                        if len(valid_dates) > 0:
+                            closest_date = valid_dates[-1]  # Most recent date
+                            close_values.append(daily_close.loc[closest_date])
+                        else:
+                            # No previous date available, use forward fill from daily data
+                            close_values.append(None)
+
+                    # Add 'close' column to fundamental data
+                    df_f_with_close['close'] = close_values
+
+                    # Forward fill any None values
+                    df_f_with_close['close'] = df_f_with_close['close'].ffill()
+
+                    # Update fundamental dataframe
+                    self.df_F[stock] = df_f_with_close
+
+                    # Forward fill other missing fundamental values
                     self.df_F[stock].ffill(inplace=True)
-                    
+
                     # Remove duplicates
                     self.df_F[stock] = self.df_F[stock][~self.df_F[stock].index.duplicated()]
-                    
+
+                    logger.debug(f"Processed fundamental data for {stock}: {len(self.df_F[stock])} records with close prices")
+
             except Exception as e:
                 logger.error(f"Error processing fundamental data for {stock}: {e}")
-    
+                import traceback
+                traceback.print_exc()
+
     def get_strategy_data(self, strategy_name: str = 'A') -> Tuple[Dict, List[str]]:
         """
         Prepare data for strategy processing (based on refer RunStrategy logic)

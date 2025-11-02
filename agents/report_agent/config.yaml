@@ -1,0 +1,176 @@
+# Report Agent Configuration
+# Agent for comprehensive trading analysis and reporting
+
+agent:
+  name: "Report Agent"
+  version: "1.0.0"
+  description: "Analysis and reporting specialist for trading performance"
+  model: "claude-opus-4-1-20250805"  # Claude Opus 4.1
+
+# Agent capabilities
+capabilities:
+  - pl_analysis           # Profit/Loss analysis
+  - balance_analysis      # Balance evolution tracking
+  - gap_analysis         # Backtest vs Live comparison (future)
+  - performance_metrics   # Performance metric calculation
+  - risk_analysis        # Risk metric analysis
+  - report_generation    # Comprehensive report generation
+
+# Access permissions
+permissions:
+  read:
+    - all_layers         # Can read from all layers
+  write:
+    - reporting_layer    # Can only write to Reporting Layer
+  input:
+    - order_history      # Receives trading history
+    - market_prices      # Receives market price data
+  output:
+    - analysis_reports   # Generates analysis reports
+    - text_reports      # Generates formatted text reports
+    - json_reports      # Generates JSON format reports
+
+# Report settings
+reporting:
+  initial_balance: 100000.0
+  report_formats:
+    - json
+    - text
+    - html  # Future implementation
+
+  report_types:
+    - full              # Comprehensive report with all analyses
+    - pl                # P/L focused report
+    - balance           # Balance evolution report
+    - summary           # Executive summary
+    - gap               # Backtest vs Live comparison (future)
+
+# Analysis thresholds
+thresholds:
+  # Performance thresholds
+  good_win_rate: 55        # Win rate above this is good
+  warning_win_rate: 45     # Win rate below this is warning
+  critical_win_rate: 40    # Win rate below this is critical
+
+  # Drawdown thresholds
+  acceptable_drawdown: 10  # Max drawdown % considered acceptable
+  warning_drawdown: 20     # Drawdown % triggering warning
+  critical_drawdown: 30    # Drawdown % considered critical
+
+  # Sharpe ratio thresholds
+  excellent_sharpe: 2.0    # Excellent risk-adjusted return
+  good_sharpe: 1.5        # Good risk-adjusted return
+  acceptable_sharpe: 1.0  # Acceptable risk-adjusted return
+  poor_sharpe: 0.5        # Poor risk-adjusted return
+
+# Analysis parameters
+analysis:
+  # P/L Analysis
+  pl_analysis:
+    calculate_expectancy: true
+    calculate_profit_factor: true
+    analyze_streaks: true
+    analyze_by_ticker: true
+    analyze_by_time: true
+
+  # Balance Analysis
+  balance_analysis:
+    track_daily_balance: true
+    calculate_volatility: true
+    analyze_drawdowns: true
+    calculate_health_score: true
+    generate_forecast: true
+    forecast_periods: [30, 90, 180, 365]
+
+  # GAP Analysis (Future)
+  gap_analysis:
+    enabled: false  # Will be enabled in future release
+    analyze_slippage: true
+    analyze_timing: true
+    analyze_market_impact: true
+
+# Output settings
+output:
+  # Report storage
+  save_reports: true
+  report_directory: "storage/reports/"
+  max_stored_reports: 100
+
+  # Report formatting
+  decimal_places: 2
+  currency_symbol: "$"
+  percentage_format: "{:.1f}%"
+
+  # Text report settings
+  text_report:
+    line_width: 80
+    include_header: true
+    include_footer: true
+
+  # JSON report settings
+  json_report:
+    indent: 2
+    sort_keys: false
+    include_metadata: true
+
+# Insight generation
+insights:
+  enabled: true
+  max_insights: 5
+  categories:
+    - risk_management
+    - performance_improvement
+    - position_sizing
+    - market_timing
+    - portfolio_optimization
+
+# Recommendations
+recommendations:
+  enabled: true
+  max_recommendations: 5
+  priority_levels:
+    - critical
+    - high
+    - medium
+    - low
+
+  auto_generate: true
+  based_on:
+    - win_rate
+    - drawdown
+    - sharpe_ratio
+    - profit_factor
+    - volatility
+
+# Integration with Orchestrator
+orchestrator:
+  respond_to: "Orchestrator Agent"
+  communication_protocol: "synchronous"
+  timeout_seconds: 30
+  retry_attempts: 3
+
+# Logging
+logging:
+  level: "INFO"
+  format: "[%(asctime)s] [%(name)s] %(levelname)s: %(message)s"
+  file: "logs/report_agent.log"
+  max_file_size: "10MB"
+  backup_count: 5
+
+# Performance optimization
+optimization:
+  cache_reports: true
+  cache_duration_minutes: 60
+  parallel_processing: false  # Can be enabled for large datasets
+  batch_size: 1000          # For batch processing
+
+# Future features (placeholder)
+future_features:
+  - real_time_reporting
+  - multi_account_analysis
+  - cross_strategy_comparison
+  - monte_carlo_simulation
+  - machine_learning_insights
+  - automated_report_scheduling
+  - email_report_delivery
+  - dashboard_integration

@@ -28,7 +28,7 @@ class StagedDataLoader:
     """
 
     def __init__(self, market: str = 'US', area: str = 'US',
-                 start_day: datetime = None, end_day: datetime = None):
+                 start_day: datetime = None, end_day: datetime = None, is_backtest: bool = False):
         """
         Initialize staged data loader
 
@@ -37,11 +37,13 @@ class StagedDataLoader:
             area: Area identifier (US, KR)
             start_day: Start date for data loading
             end_day: End date for data loading
+            is_backtest: True for backtest mode (prevents future reference), False for live trading
         """
         self.market = market
         self.area = area
         self.start_day = start_day or (datetime.now() - timedelta(days=365*3))
         self.end_day = end_day or datetime.now()
+        self.is_backtest = is_backtest
 
         # Single MongoDB connection for all operations
         self.db = MongoDBOperations(db_address="MONGODB_LOCAL")
@@ -74,7 +76,8 @@ class StagedDataLoader:
             market=self.market,
             area=self.area,
             start_day=self.start_day,
-            end_day=self.end_day
+            end_day=self.end_day,
+            is_backtest=self.is_backtest
         )
 
         # Load data from database
@@ -181,11 +184,11 @@ class StagedDataLoader:
         summary += "STAGED DATA LOADING SUMMARY\n"
         summary += "="*80 + "\n\n"
 
-        stages = ['E', 'F', 'W', 'RS', 'D']
+        stages = ['W', 'F', 'E', 'RS', 'D']
         stage_names = {
-            'E': 'Earnings',
-            'F': 'Fundamental',
             'W': 'Weekly',
+            'F': 'Fundamental',
+            'E': 'Earnings',
             'RS': 'Relative Strength',
             'D': 'Daily'
         }

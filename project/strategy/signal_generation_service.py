@@ -16,11 +16,11 @@ import logging
 
 # Import config loader
 try:
-    from project.strategy.signal_config_loader import SignalConfigLoader
+    from project.strategy.strategy_signal_config_loader import StrategySignalConfigLoader
     CONFIG_LOADER_AVAILABLE = True
 except ImportError:
     CONFIG_LOADER_AVAILABLE = False
-    logger.warning("SignalConfigLoader not available - using hardcoded values")
+    # Note: Warning will be logged in __init__ if needed
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -65,9 +65,9 @@ class SignalGenerationService:
         # 설정 로더 초기화
         if CONFIG_LOADER_AVAILABLE:
             try:
-                self.config_loader = SignalConfigLoader(config_path)
+                self.config_loader = StrategySignalConfigLoader(config_path)
                 self.use_config = True
-                logger.info("SignalConfigLoader initialized successfully")
+                logger.info("StrategySignalConfigLoader initialized successfully")
                 self.config_loader.print_summary()
             except Exception as e:
                 logger.warning(f"Failed to load config: {e}. Using default values.")
@@ -316,6 +316,17 @@ class SignalGenerationService:
             else:
                 return 0
 
+            # Config에서 조건 값 읽기
+            if self.use_config:
+                high_stability_factor = self.config_loader.get_weekly_high_stability_factor()
+                low_distance_factor = self.config_loader.get_weekly_low_distance_factor()
+                high_distance_factor = self.config_loader.get_weekly_high_distance_factor()
+            else:
+                # Fallback to default values (balanced strategy)
+                high_stability_factor = 1.05
+                low_distance_factor = 1.3
+                high_distance_factor = 0.7
+
             # refer Strategy_A.py lines 99-103: 정확한 조건들
             # wCondition1 = 1Year_H == 2Year_H
             w_condition1 = latest.get('1Year_H', 0) == latest.get('2Year_H', 0)
@@ -323,14 +334,14 @@ class SignalGenerationService:
             # wCondition2 = 2Year_L < 1Year_L
             w_condition2 = latest.get('2Year_L', 0) < latest.get('1Year_L', 0)
 
-            # wCondition3 = 52_H <= 52_H.shift(2) * 1.05
-            w_condition3 = latest.get('52_H', 0) <= prev_2.get('52_H', 0) * 1.05
+            # wCondition3 = 52_H <= 52_H.shift(2) * high_stability_factor
+            w_condition3 = latest.get('52_H', 0) <= prev_2.get('52_H', 0) * high_stability_factor
 
-            # wCondition4 = Wclose.shift(1) > 52_L * 1.3
-            w_condition4 = prev_1.get('Wclose', 0) > latest.get('52_L', 0) * 1.3
+            # wCondition4 = Wclose.shift(1) > 52_L * low_distance_factor
+            w_condition4 = prev_1.get('Wclose', 0) > latest.get('52_L', 0) * low_distance_factor
 
-            # wCondition5 = Wclose.shift(1) > 52_H * 0.7
-            w_condition5 = prev_1.get('Wclose', 0) > latest.get('52_H', 0) * 0.7
+            # wCondition5 = Wclose.shift(1) > 52_H * high_distance_factor
+            w_condition5 = prev_1.get('Wclose', 0) > latest.get('52_H', 0) * high_distance_factor
 
             # refer line 105: 모든 조건을 AND로 결합
             if w_condition1 and w_condition2 and w_condition3 and w_condition4 and w_condition5:
@@ -366,12 +377,18 @@ class SignalGenerationService:
             rs_threshold = self.config_loader.get_rs_threshold() if self.use_config else 90
 
             # RS 조건 평가
-            if self.use_config and self.config_loader.signal_config.rs_signal.conditions:
+            # Note: conditions 기능은 현재 미구현 상태, 기본 임계값 로직만 사용
+            rs_signal_config = self.config_loader.get_rs_config() if self.use_config else {}
+            conditions = rs_signal_config.get('conditions') if rs_signal_config else None
+
+            if self.use_config and conditions:
                 # 설정 파일의 조건들을 모두 평가
                 all_conditions_met = True
-                for condition in self.config_loader.signal_config.rs_signal.conditions:
-                    if condition.indicator == 'RS_4W':
-                        condition_met = self.config_loader.evaluate_condition(condition, rs_4w)
+                for condition in conditions:
+                    if condition.get('indicator') == 'RS_4W':
+                        # evaluate_condition 메서드가 없으므로 간단한 비교만 수행
+                        threshold_val = condition.get('threshold', rs_threshold)
+                        condition_met = rs_4w >= threshold_val
                         if not condition_met:
                             all_conditions_met = False
                             break
@@ -439,17 +456,36 @@ class SignalGenerationService:
                     prev_rev_yoy = 0
                     prev_eps_yoy = 0
 
-                # refer와 동일한 조건식
-                f_condition1 = market_cap >= 2000000000  # 시가총액 > 20억USD
-                f_condition2 = market_cap <= 20000000000000  # 시가총액 < 20조USD
-                f_condition3 = rev_yoy >= 0.1  # 매출 YoY >= 10%
-                f_condition4 = prev_rev_yoy >= 0  # 전기 매출 YoY >= 0%
-                f_condition6 = eps_yoy >= 0.1  # EPS YoY >= 10%
-                f_condition7 = prev_eps_yoy >= 0  # 전기 EPS YoY >= 0%
-                f_condition9 = revenue > 0  # 매출 > 0
+                # Config에서 조건 값 읽기
+                if self.use_config:
+                    min_market_cap = self.config_loader.get_fundamental_market_cap_min()
+                    max_market_cap = self.config_loader.get_fundamental_market_cap_max()
+                    min_rev_yoy = self.config_loader.get_fundamental_revenue_min_yoy()
+                    min_prev_rev_yoy = self.config_loader.get_fundamental_revenue_min_prev_yoy()
+                    min_eps_yoy = self.config_loader.get_fundamental_eps_min_yoy()
+                    min_prev_eps_yoy = self.config_loader.get_fundamental_eps_min_prev_yoy()
+                    min_revenue = self.config_loader.get_fundamental_revenue_min_value()
+                else:
+                    # Fallback to default values (balanced strategy)
+                    min_market_cap = 2000000000
+                    max_market_cap = 20000000000000
+                    min_rev_yoy = 0.1
+                    min_prev_rev_yoy = 0.0
+                    min_eps_yoy = 0.1
+                    min_prev_eps_yoy = 0.0
+                    min_revenue = 0
+
+                # Config 값을 사용한 조건식
+                f_condition1 = market_cap >= min_market_cap  # 시가총액 최소값
+                f_condition2 = market_cap <= max_market_cap  # 시가총액 최대값
+                f_condition3 = rev_yoy >= min_rev_yoy  # 매출 YoY 최소값
+                f_condition4 = prev_rev_yoy >= min_prev_rev_yoy  # 전기 매출 YoY 최소값
+                f_condition6 = eps_yoy >= min_eps_yoy  # EPS YoY 최소값
+                f_condition7 = prev_eps_yoy >= min_prev_eps_yoy  # 전기 EPS YoY 최소값
+                f_condition9 = revenue > min_revenue  # 매출 최소값
 
                 # refer line 184: (매출 성장 조건) OR (EPS 성장 조건)
-                if f_condition1 and ((f_condition3 and f_condition4) or (f_condition6 and f_condition7)) and f_condition9:
+                if f_condition1 and f_condition2 and ((f_condition3 and f_condition4) or (f_condition6 and f_condition7)) and f_condition9:
                     return 1
 
             return 0
@@ -483,15 +519,28 @@ class SignalGenerationService:
             latest_eps_yoy = latest.get('eps_yoy')
             latest_eps_yoy = 0 if latest_eps_yoy is None or pd.isna(latest_eps_yoy) else latest_eps_yoy
 
+            # Config에서 조건 값 읽기
+            if self.use_config:
+                min_prev_rev_yoy = self.config_loader.get_earnings_revenue_min_prev_yoy()
+                min_prev_eps_yoy = self.config_loader.get_earnings_eps_min_prev_yoy()
+                require_rev_growth = self.config_loader.get_earnings_revenue_require_growth()
+                require_eps_growth = self.config_loader.get_earnings_eps_require_growth()
+            else:
+                # Fallback to default values (balanced strategy)
+                min_prev_rev_yoy = 0.0
+                min_prev_eps_yoy = 0.0
+                require_rev_growth = True
+                require_eps_growth = True
+
             # 매출 성장 조건
-            rev_condition1 = prev_rev_yoy >= 0
-            rev_condition2 = latest_rev_yoy > prev_rev_yoy
+            rev_condition1 = prev_rev_yoy >= min_prev_rev_yoy
+            rev_condition2 = latest_rev_yoy > prev_rev_yoy if require_rev_growth else True
 
             # EPS 성장 조건
-            eps_condition1 = prev_eps_yoy >= 0
-            eps_condition2 = latest_eps_yoy > prev_eps_yoy
+            eps_condition1 = prev_eps_yoy >= min_prev_eps_yoy
+            eps_condition2 = latest_eps_yoy > prev_eps_yoy if require_eps_growth else True
 
-            # 둘 중 하나라도 성장하면 매수 신호
+            # 둘 중 하나라도 성장하면 매수 신호 (OR 로직)
             if (rev_condition1 and rev_condition2) or (eps_condition1 and eps_condition2):
                 return 1
 
@@ -512,6 +561,17 @@ class SignalGenerationService:
             if df_daily.empty or len(df_daily) < 2:
                 return {'signal': 0, 'target_price': 0.0, 'losscut_price': 0.0, 'signal_type': None}
 
+            # Config에서 조건 값 읽기
+            if self.use_config:
+                rs_threshold = self.config_loader.get_daily_rs_threshold()
+                losscut_ratio = self.config_loader.get_daily_losscut_ratio()
+                timeframes = self.config_loader.get_daily_breakout_timeframes()
+            else:
+                # Fallback to default values (balanced strategy)
+                rs_threshold = 90
+                losscut_ratio = 0.97
+                timeframes = ['2Y', '1Y', '6M', '3M', '1M']
+
             # Daily는 항상 전날 데이터 사용 (iloc[-2])
             latest = df_daily.iloc[-2]
 
@@ -522,28 +582,35 @@ class SignalGenerationService:
                 rs_latest = df_rs.iloc[-2]
                 rs_4w = rs_latest.get('RS_4W', 0)
                 rs_12w = rs_latest.get('RS_12W', 0)
-                rs_condition = 1 if rs_4w >= 90 else 0
-                rs_12w_condition = 1 if rs_12w >= 90 else 0
+                rs_condition = 1 if rs_4w >= rs_threshold else 0
+                rs_12w_condition = 1 if rs_12w >= rs_threshold else 0
             else:
                 rs_12w_condition = 0
 
             # 일봉 기본 조건
-            sma200_momentum = latest.get('SMA200_M', 0) > 0
+            # SMA200_M이 없거나 0이면 조건 통과 (True), 값이 있으면 > 0 체크
+            sma200_m_val = latest.get('SMA200_M', 0)
+            sma200_momentum = True if sma200_m_val == 0 else sma200_m_val > 0
+
             sma_condition = latest.get('SMA200', 0) < latest.get('SMA50', 0)
             highest_1m_condition = latest.get('Highest_1M', 0) != latest.get('Dhigh', 0)
 
             # 기본 조건 결합
             base_conditions = sma200_momentum and sma_condition and rs_condition
 
-            if not base_conditions and not rs_12w_condition:
-                return {'signal': 0, 'target_price': 0.0, 'losscut_price': 0.0, 'signal_type': None}
-
             # 브레이크아웃 조건들 체크
             current_high = latest.get('Dhigh', 0)
-            timeframes = ['2Y', '1Y', '6M', '3M', '1M']
+            current_close = latest.get('Dclose', 0)
 
-            signal_result = {'signal': 0, 'target_price': 0.0, 'losscut_price': 0.0, 'signal_type': None}
+            signal_result = {
+                'signal': 0,
+                'target_price': 0.0,
+                'losscut_price': 0.0,
+                'signal_type': None
+            }
 
+            # IMPORTANT: Always calculate target_price and losscut_price based on Highest values
+            # regardless of whether dSignal is 0 or 1
             for timeframe in timeframes:
                 highest_col = f'Highest_{timeframe}'
                 highest_value = latest.get(highest_col, 0)
@@ -551,41 +618,60 @@ class SignalGenerationService:
                 if highest_value == 0:
                     continue
 
-                # 브레이크아웃 조건
+                # 브레이크아웃 조건 체크 (signal 판단용)
                 if self.trading_mode:
                     breakout_condition = highest_value > current_high
                 else:
                     breakout_condition = highest_value <= current_high
 
                 # 안정성 조건 (5일간 동일한 최고가 유지)
-                # 여기서는 단순화하여 현재 조건만 체크
                 stability_condition = True
 
+                # Always set target_price and losscut_price based on Highest value
+                # This happens regardless of signal value
+                if signal_result['target_price'] == 0.0:  # First valid Highest value
+                    signal_result['target_price'] = float(highest_value)
+                    # IMPORTANT: losscut_price는 현재가 기준으로 계산 (매수가 대비 -3%)
+                    signal_result['losscut_price'] = float(current_close * losscut_ratio)
+                    signal_result['signal_type'] = f'Breakout_{timeframe}'
+
+                # Only set signal=1 if conditions are met
                 if base_conditions and breakout_condition and stability_condition:
-                    signal_result = {
-                        'signal': 1,
-                        'target_price': float(highest_value),
-                        'losscut_price': float(highest_value * 0.97),
-                        'signal_type': f'Breakout_{timeframe}'
-                    }
+                    signal_result['signal'] = 1
+                    # Update target/losscut for the actual breakout timeframe
+                    signal_result['target_price'] = float(highest_value)
+                    # IMPORTANT: losscut_price는 현재가 기준으로 계산 (매수가 대비 -3%)
+                    signal_result['losscut_price'] = float(current_close * losscut_ratio)
+                    signal_result['signal_type'] = f'Breakout_{timeframe}'
                     break
 
             # RS_12W + 1M 조건 추가 체크
-            if signal_result['signal'] == 0 and rs_12w_condition:
+            if rs_12w_condition:
                 highest_1m = latest.get('Highest_1M', 0)
                 if self.trading_mode:
                     condition_1m = highest_1m > current_high
                 else:
                     condition_1m = highest_1m <= current_high
 
-                if condition_1m and highest_1m > 0:
-                    signal_result = {
-                        'signal': 1,
-                        'target_price': float(highest_1m),
-                        'losscut_price': float(highest_1m * 0.97),
-                        'signal_type': 'RS_12W_1M'
-                    }
+                if highest_1m > 0:
+                    # If no target_price set yet, use 1M Highest
+                    if signal_result['target_price'] == 0.0:
+                        signal_result['target_price'] = float(highest_1m)
+                        # IMPORTANT: losscut_price는 현재가 기준으로 계산
+                        signal_result['losscut_price'] = float(current_close * losscut_ratio)
+                        signal_result['signal_type'] = 'RS_12W_1M'
 
+                    # Set signal=1 if condition met
+                    if condition_1m:
+                        signal_result['signal'] = 1
+                        signal_result['target_price'] = float(highest_1m)
+                        # IMPORTANT: losscut_price는 현재가 기준으로 계산
+                        signal_result['losscut_price'] = float(current_close * losscut_ratio)
+                        signal_result['signal_type'] = 'RS_12W_1M'
+
+            # IMPORTANT: Now target_price and losscut_price are ALWAYS calculated
+            # - target_price: based on Highest values (목표가)
+            # - losscut_price: based on current_close (손절가 = 현재가 × 0.97)
             return signal_result
 
         except Exception as e:

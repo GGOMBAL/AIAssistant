@@ -104,6 +104,17 @@ agents:
       - "notification_services"
     model_selection_strategy: "cost_efficiency"
 
+  report_agent:
+    primary_model: "claude_opus"
+    fallback_model: "claude_sonnet"
+    use_cases:
+      - "performance_analysis"
+      - "pl_analysis"
+      - "balance_tracking"
+      - "report_generation"
+      - "insights_extraction"
+    model_selection_strategy: "quality_first"
+
   run_agent:
     primary_model: "gemini_flash"
     fallback_model: "claude_haiku"
@@ -192,11 +203,12 @@ usage_limits:
     alert_threshold: 80  # percentage
 
   agent_quotas:
-    orchestrator: 30%  # of total budget
-    data_agent: 25%
-    strategy_agent: 25%
+    orchestrator: 25%  # of total budget
+    data_agent: 20%
+    strategy_agent: 20%
     service_agent: 10%
     helper_agent: 5%
+    report_agent: 15%
     run_agent: 5%
 
 # 모델 성능 최적화

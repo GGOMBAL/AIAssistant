@@ -35,11 +35,11 @@ Service Layer는 Strategy Layer에서 생성된 매매 신호를 받아 백테�
 ```python
 @dataclass
 class BacktestConfig:
-    initial_cash: float = 100.0         # 초기 현금 (억원)
+    initial_cash: float = 100_000_000.0 # 초기 현금 (100M, 1억원)
     max_positions: int = 10             # 최대 보유 종목수
     slippage: float = 0.002             # 슬리피지 (0.2%)
-    std_risk: float = 0.1               # 표준 리스크 (10%)
-    init_risk: float = 0.03             # 초기 손절 리스크 (3%)
+    std_risk: float = 0.05              # RISK (5% = 1 unit, Stepped Trailing Stop)
+    init_risk: float = 0.03             # 최소 손절 리스크 (3%)
     half_sell_threshold: float = 0.20   # 50% 매도 임계값 (20%)
     enable_whipsaw: bool = True         # 휩쏘 처리 활성화
     enable_half_sell: bool = True       # 50% 매도 활성화

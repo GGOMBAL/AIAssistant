@@ -224,6 +224,14 @@ class MongoDBOperations:
 
             # Convert to DataFrame
             data = pd.DataFrame(list(cursor))
+
+            # IMPORTANT: Always set Date as index for time-series analysis
+            # This ensures consistent time-series operations across all layers
+            if not data.empty and 'Date' in data.columns:
+                data = data.set_index('Date')
+                # Sort index to ensure chronological order
+                data = data.sort_index()
+
             return data
 
         except Exception as e:

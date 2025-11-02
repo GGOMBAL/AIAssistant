@@ -21,6 +21,7 @@ from orchestrator.prompt_generator import PromptGenerator, PromptContext, TaskTy
 from orchestrator.hybrid_model_manager import HybridModelManager
 from orchestrator.agent_interaction_logger import get_interaction_logger
 from orchestrator.output_validator import OutputValidator, ValidationStatus
+from orchestrator.run_agent_handler import RunAgentHandler
 import yaml
 import json
 
@@ -45,6 +46,9 @@ class UserInputHandler:
         self.prompt_generator = PromptGenerator()
         self.conversation_history = []
         self.verbose = verbose  # 로그 출력 여부
+
+        # RunAgentHandler 초기화
+        self.run_agent_handler = RunAgentHandler(run_agent=run_agent) if run_agent else None
 
         # verbose=False이면 로깅 레벨을 ERROR로 설정
         if not verbose:
@@ -147,6 +151,37 @@ class UserInputHandler:
         if analysis['request_type'] == RequestType.CODE_MODIFICATION:
             logger.info(f"\n[CODE_MODIFICATION 워크플로우 시작]")
             final_result = await self._execute_code_modification_workflow(user_input, analysis)
+        # 백테스트 요청이면서 RUN AGENT를 사용하는 경우
+        elif analysis.get('task_type') == TaskType.BACKTEST and 'run_agent' in analysis.get('agents_needed', []):
+            logger.info(f"\n[RUN AGENT 백테스트 워크플로우 시작]")
+            if self.run_agent_handler:
+                result = await self.run_agent_handler.execute_backtest_with_feedback(
+                    user_request=user_input,
+                    analysis=analysis,
+                    max_retries=3
+                )
+                # 결과를 표준 형식으로 변환
+                final_result = {
+                    "user_request": user_input,
+                    "task_type": str(analysis['task_type']),
+                    "agents_executed": ["run_agent"],
+                    "successful_agents": ["run_agent"] if result.get("status") == "success" else [],
+                    "failed_agents": ["run_agent"] if result.get("status") == "error" else [],
+                    "results": {"run_agent": result},
+                    "summary": self._generate_run_agent_summary(result),
+                    "timestamp": datetime.now().isoformat()
+                }
+            else:
+                final_result = {
+                    "user_request": user_input,
+                    "task_type": str(analysis['task_type']),
+                    "agents_executed": [],
+                    "successful_agents": [],
+                    "failed_agents": [],
+                    "results": {},
+                    "summary": "RUN AGENT가 초기화되지 않았습니다.",
+                    "timestamp": datetime.now().isoformat()
+                }
         else:
             # 기존 EXECUTION 워크플로우
             # 2. Workflow 실행 계획
@@ -678,6 +713,27 @@ class UserInputHandler:
         successful = len([r for r in results.values() if r.get('status') == 'success'])
         return f"{successful}/{len(results)} Agent(s) 성공적으로 실행됨"
 
+    def _generate_run_agent_summary(self, result: Dict[str, Any]) -> str:
+        """RUN AGENT 실행 결과 요약 생성"""
+        if result.get("status") == "success":
+            summary = result.get("summary", "")
+            if summary:
+                return f"백테스트 실행 완료:\n{summary}"
+            else:
+                return f"""
+백테스트 실행 완료:
+- 실행 파일: {result.get('file_path', 'N/A')}
+- 실행 시간: {result.get('duration', 0):.2f}초
+- 상태: 성공
+"""
+        else:
+            return f"""
+백테스트 실행 실패:
+- 에러: {result.get('error', 'Unknown error')}
+- 시도 횟수: {result.get('attempts', 1)}
+- 마지막 에러: {result.get('last_error', 'N/A')}
+"""
+
     def _get_agent_description(self, agent_name: str) -> str:
         """Agent별 역할 설명"""
         descriptions = {
@@ -732,7 +788,7 @@ Your job is to analyze the user's request and return a structured JSON response.
 - database_agent: Data loading from MongoDB, technical indicator calculation
 - strategy_agent: Trading signal generation, universe selection
 - service_agent: Backtest execution, portfolio management, performance analysis
-- run_agent: Execute existing Python scripts (main_auto_trade.py, etc.)
+- run_agent: Execute existing Python scripts for backtest or trading (run_backtest.py, run_auto_trade.py, etc.)
 
 **Request Types**:
 1. EXECUTION: Running existing code, querying data, generating signals, backtesting
@@ -753,6 +809,8 @@ Your job is to analyze the user's request and return a structured JSON response.
 - "시그널 생성" (generate signal) = EXECUTION (calling existing functions)
 - "함수 생성" (create function) = CODE_MODIFICATION (writing new code)
 - Context matters! Analyze the full sentence to determine intent.
+- For backtest requests with "RUN AGENT를 이용해서" or "RUN AGENT로", use run_agent
+- When user explicitly mentions "RUN AGENT", always include "run_agent" in agents_needed
 
 Return JSON in this format:
 ```json

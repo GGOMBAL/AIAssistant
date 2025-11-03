@@ -5,7 +5,16 @@
       "Bash(nul)",
       "Bash(test -f:*)",
       "Bash(python -m py_compile:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(net stop MongoDB)",
+      "Bash(sc query:*)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)",
+      "Bash(powershell -Command \"Restart-Service -Name MongoDB -Force\")",
+      "Bash(python test_balance_calculation.py:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

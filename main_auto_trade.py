@@ -24,6 +24,7 @@ from typing import Dict, List, Any, Optional
 import yaml
 from pymongo import MongoClient
 import pandas as pd
+import json
 
 # Set matplotlib backend to non-interactive before importing quantstats
 import matplotlib
@@ -1764,10 +1765,48 @@ async def run_auto_backtest(config: dict):
     print("="*60)
 
     # 백테스트 기간 설정
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=365)
+    print("\n백테스트 기간을 선택하세요:")
+    print("1. 최근 1년 (기본값)")
+    print("2. 최근 2년")
+    print("3. 최근 3년")
+    print("4. 최근 5년")
+    print("5. 사용자 지정 (연 단위)")
 
-    print(f"\n백테스트 기간: {start_date.strftime('%Y-%m-%d')} ~ {end_date.strftime('%Y-%m-%d')}")
+    period_choice = input("\n선택 (1-5, 기본값: 1): ").strip() or "1"
+
+    end_date = datetime.now()
+
+    if period_choice == "1":
+        years = 1
+    elif period_choice == "2":
+        years = 2
+    elif period_choice == "3":
+        years = 3
+    elif period_choice == "4":
+        years = 5
+    elif period_choice == "5":
+        # 사용자 지정
+        try:
+            custom_years = input("백테스트 기간(년)을 입력하세요 (예: 5): ").strip()
+            years = int(custom_years) if custom_years else 1
+            if years < 1:
+                print("[WARNING] 1년 미만은 불가능합니다. 기본값 1년으로 설정합니다.")
+                years = 1
+            elif years > 10:
+                print("[WARNING] 10년 초과는 권장하지 않습니다. 10년으로 제한합니다.")
+                years = 10
+        except ValueError:
+            print("[WARNING] 잘못된 입력입니다. 기본값 1년으로 설정합니다.")
+            years = 1
+    else:
+        print("[WARNING] 잘못된 선택입니다. 기본값 1년으로 설정합니다.")
+        years = 1
+
+    start_date = end_date - timedelta(days=365*years)
+
+    print(f"\n[백테스트 기간] {years}년")
+    print(f"  시작: {start_date.strftime('%Y-%m-%d')}")
+    print(f"  종료: {end_date.strftime('%Y-%m-%d')}")
 
     # 종목 로드
     print("\n종목 로드 중...")
@@ -1866,22 +1905,24 @@ async def show_ticker_signal_timeline(config: dict):
 
                 pipeline_results = pipeline.run_staged_pipeline(symbols)
 
-                # Get final candidates from pipeline
-                final_candidates = pipeline_results.get('final_candidates', [])
+                # Collect data from this market (regardless of filter pass/fail)
+                # Menu 4: Show timeline for all requested symbols, not just those that pass filters
+                market_data = pipeline.data_loader.get_all_loaded_data()
+                found_symbols = []
 
-                if final_candidates:
-                    print(f"   [OK] {market_name}에서 {len(final_candidates)}개 종목 발견: {', '.join(final_candidates)}")
-                    all_final_candidates.extend(final_candidates)
-
-                    # Collect data from this market
-                    market_data = pipeline.data_loader.get_all_loaded_data()
-                    if market_data:
-                        for stage, symbols_data in market_data.items():
-                            if isinstance(symbols_data, dict):
-                                for symbol, df in symbols_data.items():
+                if market_data:
+                    for stage, symbols_data in market_data.items():
+                        if isinstance(symbols_data, dict):
+                            for symbol, df in symbols_data.items():
+                                if symbol in symbols:  # Only collect requested symbols
                                     if symbol not in all_loaded_data_combined:
                                         all_loaded_data_combined[symbol] = {}
+                                        found_symbols.append(symbol)
                                     all_loaded_data_combined[symbol][stage] = df
+
+                if found_symbols:
+                    print(f"   [OK] {market_name}에서 {len(found_symbols)}개 종목 발견: {', '.join(found_symbols)}")
+                    all_final_candidates.extend(found_symbols)
                 else:
                     print(f"   [INFO] {market_name}에서 해당 종목을 찾을 수 없습니다.")
 
@@ -1893,10 +1934,10 @@ async def show_ticker_signal_timeline(config: dict):
         all_final_candidates = list(set(all_final_candidates))
 
         if not all_final_candidates:
-            print("\n[WARNING] 시그널을 통과한 종목이 없습니다.")
-            print("   - 해당 종목의 데이터가 NASDAQ 및 NYSE MongoDB에 없거나")
-            print("   - 필터 조건을 통과하지 못했을 수 있습니다.")
+            print("\n[ERROR] 입력한 종목의 데이터를 찾을 수 없습니다.")
+            print("   - 해당 종목의 데이터가 NASDAQ 및 NYSE MongoDB에 없습니다.")
             print(f"   - 입력한 종목: {', '.join(symbols)}")
+            print("   - MongoDB에 해당 종목의 데이터가 저장되어 있는지 확인해주세요.")
             return
 
         # Use combined data from all markets
@@ -2157,6 +2198,50 @@ async def run_auto_trading(config: dict, account_type: str = None, execute_order
                       f"${data['loss_cut']:<11.2f} ${data['target']:<11.2f}")
 
             print("="*60)
+
+            # Save buy candidates to JSON for backtest validation
+            try:
+                output_dir = Path("outputs/auto_trading")
+                output_dir.mkdir(parents=True, exist_ok=True)
+
+                execution_date = datetime.now().strftime("%Y-%m-%d")
+                execution_time = datetime.now().strftime("%H:%M:%S")
+                filename = f"buy_candidates_{execution_date.replace('-', '')}.json"
+                filepath = output_dir / filename
+
+                candidates_data = {
+                    "execution_date": execution_date,
+                    "execution_time": execution_time,
+                    "account_type": account_type,
+                    "execution_mode": "pending",  # Will be updated after order mode selection
+                    "market": "US",
+                    "total_candidates": len(sorted_signals),
+                    "candidates": []
+                }
+
+                for symbol, data in sorted_signals:
+                    candidate_info = {
+                        "symbol": symbol,
+                        "signal_strength": float(data.get('signal_strength', 0)),
+                        "current_price": float(data.get('close', 0)),
+                        "loss_cut": float(data.get('loss_cut', 0)),
+                        "target_price": float(data.get('target', 0)),
+                        "signal_details": {
+                            "RS": float(data.get('RS', 0)) if 'RS' in data else None,
+                            "signal_type": data.get('signal_type', 'UNKNOWN'),
+                            "filter_conditions": data.get('filter_conditions', {})
+                        }
+                    }
+                    candidates_data["candidates"].append(candidate_info)
+
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    json.dump(candidates_data, f, indent=2, ensure_ascii=False)
+
+                print(f"\n[OK] 매수 후보군 저장 완료: {filepath}")
+
+            except Exception as e:
+                print(f"[WARNING] 매수 후보군 JSON 저장 실패: {e}")
+
         else:
             print("\n[4/7] 매수 신호 없음 - 보유 종목 모니터링만 수행")
             sorted_signals = []
@@ -2185,8 +2270,28 @@ async def run_auto_trading(config: dict, account_type: str = None, execute_order
                         print(f"[INFO] 모니터링 전용 모드 (주문 실행 안함)")
                     else:
                         # execute_orders가 None인 경우 (대화형 모드)
-                        execute_real_orders = False
-                        print(f"[INFO] 모니터링 전용 모드 (주문 실행 안함)")
+                        print("\n주문 실행 모드를 선택하세요:")
+                        print("1. 모니터링 전용 (시뮬레이션 - 주문 실행 안함)")
+                        print("2. 실제 주문 실행 (정규장 시간에만 실제 주문 전송)")
+
+                        order_choice = input("\n선택 (1-2, 기본값: 1): ").strip() or "1"
+
+                        if order_choice == "2":
+                            # 실제 주문 실행 모드 - 추가 확인
+                            print("\n[WARNING] 실제 주문 실행 모드를 선택하셨습니다.")
+                            print(f"[WARNING] 계좌: {account_type}")
+                            print("[WARNING] 정규장 시간(09:30~16:00 ET)에 실제 주문이 전송됩니다.")
+                            confirm = input("정말 실행하시겠습니까? (YES 입력 필요): ").strip()
+
+                            if confirm == "YES":
+                                execute_real_orders = True
+                                print(f"[WARNING] 실제 주문 실행 모드 활성화")
+                            else:
+                                execute_real_orders = False
+                                print(f"[INFO] 모니터링 전용 모드로 전환 (주문 실행 취소됨)")
+                        else:
+                            execute_real_orders = False
+                            print(f"[INFO] 모니터링 전용 모드 (주문 실행 안함)")
                 else:
                     print(f"[WARNING] KIS API 인증 실패. 시뮬레이션 모드로 전환")
                     execute_real_orders = False
@@ -2203,6 +2308,30 @@ async def run_auto_trading(config: dict, account_type: str = None, execute_order
             kis_api = None
             print(f"[INFO] 시뮬레이션 모드로 실행 (KIS API credentials not configured)")
             print(f"[INFO] 실시간 가격 모니터링 및 신호 감지만 수행합니다")
+
+        # Update JSON file with execution mode (if candidates exist)
+        if buy_signals:
+            try:
+                output_dir = Path("outputs/auto_trading")
+                execution_date = datetime.now().strftime("%Y-%m-%d")
+                filename = f"buy_candidates_{execution_date.replace('-', '')}.json"
+                filepath = output_dir / filename
+
+                if filepath.exists():
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        candidates_data = json.load(f)
+
+                    # Update execution mode
+                    candidates_data["execution_mode"] = "real_orders" if execute_real_orders else "simulation"
+                    candidates_data["kis_api_enabled"] = kis_api is not None
+
+                    with open(filepath, 'w', encoding='utf-8') as f:
+                        json.dump(candidates_data, f, indent=2, ensure_ascii=False)
+
+                    print(f"[OK] 실행 모드 업데이트 완료: {candidates_data['execution_mode']}")
+
+            except Exception as e:
+                print(f"[WARNING] JSON 파일 업데이트 실패: {e}")
 
         # 6. PositionManager 초기화 (Strategy Layer)
         print("\n[6/7] PositionManager 초기화 중...")
@@ -2236,44 +2365,72 @@ async def run_auto_trading(config: dict, account_type: str = None, execute_order
                 # 신호 데이터를 딕셔너리로 변환 (빠른 조회를 위해)
                 signal_dict = {symbol: data for symbol, data in sorted_signals}
 
+                # 같은 종목의 중복 보유를 합산 (평균가격 계산)
                 for holding in holdings:
                     symbol = holding['symbol']
                     avg_price = holding['avg_price']
                     quantity = int(holding['quantity'])
                     current_price = holding['current_price']
 
-                    # 해당 종목의 신호 데이터가 있으면 사용, 없으면 기본값
-                    if symbol in signal_dict:
-                        signal_data = signal_dict[symbol]
-                        target_price = signal_data['target']
-                        losscut_price = signal_data['loss_cut']
+                    if symbol in held_positions:
+                        # 이미 존재하는 종목: 수량과 평균가 합산
+                        existing = held_positions[symbol]
+                        total_quantity = existing['quantity'] + quantity
+                        # 가중 평균 계산
+                        weighted_avg = (existing['avg_price'] * existing['quantity'] + avg_price * quantity) / total_quantity
+
+                        existing['quantity'] = total_quantity
+                        existing['avg_price'] = weighted_avg
+                        existing['current_price'] = current_price
+                        existing['market_value'] = current_price * total_quantity
+                        existing['profit_loss'] = (current_price - weighted_avg) * total_quantity
+                        existing['profit_rate'] = ((current_price - weighted_avg) / weighted_avg) * 100
+                        existing['again'] = current_price / weighted_avg if weighted_avg > 0 else 1.0
+
+                        # 목표가/손절가는 새로운 평균가 기준으로 재계산
+                        if symbol in signal_dict:
+                            signal_data = signal_dict[symbol]
+                            existing['target_price'] = signal_data['target']
+                            existing['losscut_price'] = signal_data['loss_cut']
+                        else:
+                            existing['target_price'] = weighted_avg * 1.20
+                            existing['losscut_price'] = weighted_avg * 0.97
                     else:
-                        # 기본 익절/손절: +20%, -3%
-                        target_price = avg_price * 1.20
-                        losscut_price = avg_price * 0.97
+                        # 신규 종목
+                        # 해당 종목의 신호 데이터가 있으면 사용, 없으면 기본값
+                        if symbol in signal_dict:
+                            signal_data = signal_dict[symbol]
+                            target_price = signal_data['target']
+                            losscut_price = signal_data['loss_cut']
+                        else:
+                            # 기본 익절/손절: +20%, -3%
+                            target_price = avg_price * 1.20
+                            losscut_price = avg_price * 0.97
 
-                    # AGain 초기화 (현재 수익률)
-                    initial_again = current_price / avg_price if avg_price > 0 else 1.0
+                        # AGain 초기화 (현재 수익률)
+                        initial_again = current_price / avg_price if avg_price > 0 else 1.0
 
-                    held_positions[symbol] = {
-                        'symbol': symbol,
-                        'quantity': quantity,
-                        'avg_price': avg_price,
-                        'current_price': current_price,
-                        'target_price': target_price,
-                        'losscut_price': losscut_price,
-                        'status': 'holding',
-                        'market_value': current_price * quantity,
-                        'profit_loss': holding['profit_loss'],
-                        'profit_rate': holding['profit_rate'],
-                        'again': initial_again,  # 누적 수익률 (PositionManager용)
-                        'risk': config.get('market_specific_configs', {}).get('US', {}).get('std_risk_per_trade', 0.05)
-                    }
+                        held_positions[symbol] = {
+                            'symbol': symbol,
+                            'quantity': quantity,
+                            'avg_price': avg_price,
+                            'current_price': current_price,
+                            'target_price': target_price,
+                            'losscut_price': losscut_price,
+                            'status': 'holding',
+                            'market_value': current_price * quantity,
+                            'profit_loss': holding['profit_loss'],
+                            'profit_rate': holding['profit_rate'],
+                            'again': initial_again,  # 누적 수익률 (PositionManager용)
+                            'risk': config.get('market_specific_configs', {}).get('US', {}).get('std_risk_per_trade', 0.05)
+                        }
 
-                    print(f"  - {symbol}: {quantity}주 @ ${avg_price:.2f} "
-                          f"(현재: ${current_price:.2f}, "
-                          f"익절: ${target_price:.2f}, "
-                          f"손절: ${losscut_price:.2f})")
+                # 최종 보유 종목 출력
+                for symbol, position in held_positions.items():
+                    print(f"  - {symbol}: {position['quantity']}주 @ ${position['avg_price']:.2f} "
+                          f"(현재: ${position['current_price']:.2f}, "
+                          f"익절: ${position['target_price']:.2f}, "
+                          f"손절: ${position['losscut_price']:.2f})")
 
             except Exception as e:
                 print(f"[ERROR] 보유 종목 조회 실패: {e}")
@@ -2361,6 +2518,50 @@ async def run_auto_trading(config: dict, account_type: str = None, execute_order
             print("  - 프로그램을 종료합니다.")
             return None
 
+        # 미국 장 시간 체크 함수 (on_price_update 콜백보다 먼저 정의)
+        def is_market_open() -> bool:
+            """미국 장이 열려있는지 체크 (동부 시간 기준)
+            실행 시간: 정규장 시작 1H 전 ~ 종료 1H 후 (08:30 ~ 17:00 ET)
+            pytz를 사용하여 서머타임(DST) 자동 고려
+            """
+            import pytz
+
+            eastern = pytz.timezone('America/New_York')
+            now_eastern = datetime.now(eastern)
+
+            # 주말 체크 (토,일만 False)
+            if now_eastern.weekday() >= 5:  # Saturday = 5, Sunday = 6
+                return False
+
+            # 실행 시간: 08:30 ~ 17:00 (정규장 09:30~16:00 기준 +-1H)
+            # pytz 사용으로 서머타임(DST) 자동 반영
+            start_time = now_eastern.replace(hour=8, minute=30, second=0, microsecond=0)
+            end_time = now_eastern.replace(hour=17, minute=0, second=0, microsecond=0)
+
+            return start_time <= now_eastern <= end_time
+
+        def is_regular_market_hours() -> bool:
+            """정규장 시간인지 체크 (동부 시간 기준)
+            정규장 시간: 09:30 ~ 16:00 ET
+            주문 실행은 정규장 시간에만 가능
+            pytz를 사용하여 서머타임(DST) 자동 고려
+            """
+            import pytz
+
+            eastern = pytz.timezone('America/New_York')
+            now_eastern = datetime.now(eastern)
+
+            # 주말 체크 (토,일만 False)
+            if now_eastern.weekday() >= 5:  # Saturday = 5, Sunday = 6
+                return False
+
+            # 정규장 시간: 09:30 ~ 16:00
+            # pytz 사용으로 서머타임(DST) 자동 반영
+            market_open = now_eastern.replace(hour=9, minute=30, second=0, microsecond=0)
+            market_close = now_eastern.replace(hour=16, minute=0, second=0, microsecond=0)
+
+            return market_open <= now_eastern <= market_close
+
         # 가격 업데이트 콜백 함수 정의
         async def on_price_update(price_data):
             """
@@ -2382,8 +2583,8 @@ async def run_auto_trading(config: dict, account_type: str = None, execute_order
                     if abs(current_price - candidate['target_price']) / candidate['target_price'] < 0.01:
                         print(f"\n[BUY SIGNAL] {symbol}: ${current_price:.2f} (Target: ${candidate['target_price']:.2f})")
 
-                        if execute_real_orders:
-                            # 실제 주문 실행
+                        if execute_real_orders and is_regular_market_hours():
+                            # 실제 주문 실행 (정규장 시간에만)
                             result = kis_api.make_buy_limit_order(
                                 stock_code=symbol,
                                 amt=candidate['quantity'],
@@ -2391,7 +2592,10 @@ async def run_auto_trading(config: dict, account_type: str = None, execute_order
                             )
 
                             if result.get('success', False):
-                                print(f"[OK] {symbol} 매수 주문 체결: {candidate['quantity']}주 @ ${current_price:.2f}")
+                                order_id = result.get('order_id', 'N/A')
+                                print(f"[OK] {symbol} 매수 주문 체결")
+                                print(f"     주문번호: {order_id}")
+                                print(f"     수량: {candidate['quantity']}주 @ ${current_price:.2f}")
                                 candidate['status'] = 'filled'
                                 # 보유 종목으로 이동
                                 held_positions[symbol] = {
@@ -2402,9 +2606,17 @@ async def run_auto_trading(config: dict, account_type: str = None, execute_order
                                     'status': 'holding'
                                 }
                             else:
-                                print(f"[ERROR] {symbol} 매수 주문 실패: {result.get('error', 'Unknown')}")
+                                error_msg = result.get('message', result.get('error', 'Unknown'))
+                                rt_cd = result.get('rt_cd', 'N/A')
+                                msg_cd = result.get('msg_cd', 'N/A')
+                                print(f"[ERROR] {symbol} 매수 주문 실패")
+                                print(f"     rt_cd: {rt_cd}, msg_cd: {msg_cd}")
+                                print(f"     에러: {error_msg}")
                         else:
-                            print(f"[SIMULATION] {symbol} 매수 주문 (실제 주문 비활성화)")
+                            if not is_regular_market_hours():
+                                print(f"[INFO] {symbol} 매수 대기 (정규장 시간 아님)")
+                            else:
+                                print(f"[SIMULATION] {symbol} 매수 주문 (실제 주문 비활성화)")
 
             # 보유 종목 익절/손절 체크
             if symbol in held_positions:
@@ -2423,7 +2635,7 @@ async def run_auto_trading(config: dict, account_type: str = None, execute_order
                     if current_price >= position['target_price']:
                         print(f"\n[TAKE PROFIT] {symbol}: ${current_price:.2f} >= ${position['target_price']:.2f}")
 
-                        if execute_real_orders:
+                        if execute_real_orders and is_regular_market_hours():
                             result = kis_api.make_sell_limit_order(
                                 stock_code=symbol,
                                 amt=position['quantity'],
@@ -2433,18 +2645,30 @@ async def run_auto_trading(config: dict, account_type: str = None, execute_order
                             if result.get('success', False):
                                 profit = (current_price - position['avg_price']) * position['quantity']
                                 profit_pct = ((current_price - position['avg_price']) / position['avg_price']) * 100
-                                print(f"[OK] {symbol} 익절 매도: +${profit:.2f} ({profit_pct:+.2f}%)")
+                                order_id = result.get('order_id', 'N/A')
+                                print(f"[OK] {symbol} 익절 매도 주문 체결")
+                                print(f"     주문번호: {order_id}")
+                                print(f"     수량: {position['quantity']}주 @ ${current_price:.2f}")
+                                print(f"     손익: +${profit:.2f} ({profit_pct:+.2f}%)")
                                 position['status'] = 'sold'
                             else:
-                                print(f"[ERROR] {symbol} 매도 주문 실패: {result.get('error', 'Unknown')}")
+                                error_msg = result.get('message', result.get('error', 'Unknown'))
+                                rt_cd = result.get('rt_cd', 'N/A')
+                                msg_cd = result.get('msg_cd', 'N/A')
+                                print(f"[ERROR] {symbol} 익절 매도 주문 실패")
+                                print(f"     rt_cd: {rt_cd}, msg_cd: {msg_cd}")
+                                print(f"     에러: {error_msg}")
                         else:
-                            print(f"[SIMULATION] {symbol} 익절 매도 (실제 주문 비활성화)")
+                            if not is_regular_market_hours():
+                                print(f"[INFO] {symbol} 익절 매도 대기 (정규장 시간 아님)")
+                            else:
+                                print(f"[SIMULATION] {symbol} 익절 매도 (실제 주문 비활성화)")
 
                     # 손절: 손절가 도달
                     elif current_price <= position['losscut_price']:
                         print(f"\n[STOP LOSS] {symbol}: ${current_price:.2f} <= ${position['losscut_price']:.2f}")
 
-                        if execute_real_orders:
+                        if execute_real_orders and is_regular_market_hours():
                             result = kis_api.make_sell_limit_order(
                                 stock_code=symbol,
                                 amt=position['quantity'],
@@ -2454,30 +2678,24 @@ async def run_auto_trading(config: dict, account_type: str = None, execute_order
                             if result.get('success', False):
                                 loss = (current_price - position['avg_price']) * position['quantity']
                                 loss_pct = ((current_price - position['avg_price']) / position['avg_price']) * 100
-                                print(f"[OK] {symbol} 손절 매도: ${loss:.2f} ({loss_pct:+.2f}%)")
+                                order_id = result.get('order_id', 'N/A')
+                                print(f"[OK] {symbol} 손절 매도 주문 체결")
+                                print(f"     주문번호: {order_id}")
+                                print(f"     수량: {position['quantity']}주 @ ${current_price:.2f}")
+                                print(f"     손익: ${loss:.2f} ({loss_pct:+.2f}%)")
                                 position['status'] = 'sold'
                             else:
-                                print(f"[ERROR] {symbol} 매도 주문 실패: {result.get('error', 'Unknown')}")
+                                error_msg = result.get('message', result.get('error', 'Unknown'))
+                                rt_cd = result.get('rt_cd', 'N/A')
+                                msg_cd = result.get('msg_cd', 'N/A')
+                                print(f"[ERROR] {symbol} 손절 매도 주문 실패")
+                                print(f"     rt_cd: {rt_cd}, msg_cd: {msg_cd}")
+                                print(f"     에러: {error_msg}")
                         else:
-                            print(f"[SIMULATION] {symbol} 손절 매도 (실제 주문 비활성화)")
-
-        # 미국 장 시간 체크 함수 (LivePriceService 초기화 전 정의)
-        def is_market_open() -> bool:
-            """미국 장이 열려있는지 체크 (동부 시간 기준)"""
-            import pytz
-
-            eastern = pytz.timezone('America/New_York')
-            now_eastern = datetime.now(eastern)
-
-            # 주말 체크
-            if now_eastern.weekday() >= 5:  # Saturday = 5, Sunday = 6
-                return False
-
-            # 장 시간: 09:30 ~ 16:00 (동부 시간)
-            market_open = now_eastern.replace(hour=9, minute=30, second=0)
-            market_close = now_eastern.replace(hour=16, minute=0, second=0)
-
-            return market_open <= now_eastern <= market_close
+                            if not is_regular_market_hours():
+                                print(f"[INFO] {symbol} 손절 매도 대기 (정규장 시간 아님)")
+                            else:
+                                print(f"[SIMULATION] {symbol} 손절 매도 (실제 주문 비활성화)")
 
         # 마켓 오픈 여부 체크
         if not is_market_open():
@@ -2693,10 +2911,20 @@ async def run_auto_trading(config: dict, account_type: str = None, execute_order
 
         except KeyboardInterrupt:
             print("\n\n[INFO] 사용자에 의해 모니터링 중지")
-
-        # 모니터링 중지
-        await live_price_service.stop_service()
-        print("\n[OK] 실시간 모니터링 종료")
+        except asyncio.CancelledError:
+            print("\n\n[INFO] 모니터링 작업이 취소되었습니다")
+        except Exception as e:
+            print(f"\n[ERROR] 모니터링 루프 중 에러 발생: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            # 모니터링 중지 (어떤 경우에도 실행)
+            print("\n[INFO] LivePriceService 종료 중...")
+            try:
+                await live_price_service.stop_service()
+                print("[OK] 실시간 모니터링 종료")
+            except Exception as e:
+                print(f"[WARNING] LivePriceService 종료 실패: {e}")
 
         # Report Agent를 통한 트레이딩 모니터 대시보드 생성
         try:

@@ -708,19 +708,16 @@ class DailyBacktestService:
             # 3. 첫 날 수익률 계산 (refer와 동일)
             daily_gain = (close_price - entry_price) / entry_price if entry_price > 0 else 0
 
-            # 4. refer과 동일한 Again 계산
+            # 4. Again 계산 (1 + 첫날 수익률)
             asset_a_gain_new = 1 + daily_gain
 
-            # 5. refer과 동일한 자산 밸런스 계산
-            asset_balance_new = round(float(input_size * asset_a_gain_new), 3)
-
-            # 6. 손절가 계산 (refer CalcLossCutPrice 로직)
+            # 5. 손절가 계산 (refer CalcLossCutPrice 로직)
             # 신규 매수 시에는 losscut_old = 0으로 전달
             losscut_price = self._calculate_refer_losscut_price(
                 asset_a_gain_new, 0.0, entry_price, self.config.std_risk
             )
 
-            # 7. Whipsaw 조건 체크 (refer와 동일)
+            # 6. Whipsaw 조건 체크 (refer와 동일)
             low_gain = (low_price - entry_price) / entry_price if entry_price > 0 else 0
             cut_gain = (losscut_price - entry_price) / entry_price if entry_price > 0 else 0
 
@@ -738,12 +735,15 @@ class DailyBacktestService:
                 # Whipsaw condition - immediate loss cut
                 return self._execute_whipsaw_trade(ticker, entry_price, daily_gain, date, portfolio, input_size)
 
-            # 8. refer과 동일한 포지션 생성
+            # 7. 포지션 생성
+            # FIX: balance는 원래 투자금액(input_size)만 저장
+            # market_value = balance * again 으로 계산되므로
+            # balance에 again을 곱하면 중복 계산됨
             position = Position(
                 ticker=ticker,
-                balance=asset_balance_new,  # refer 로직: InputSize * AGain
+                balance=input_size,  # FIX: 원래 투자금액만 저장 (이전: input_size * again - 버그)
                 avg_price=entry_price,
-                again=asset_a_gain_new,     # refer 로직: 1 + Gain
+                again=asset_a_gain_new,     # 누적 수익률 (1 + Gain)
                 duration=1,
                 losscut_price=losscut_price,
                 risk=self.config.std_risk

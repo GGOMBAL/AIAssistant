@@ -751,10 +751,16 @@ class KISUSHelper:
             
             if response.status_code == 200:
                 result = response.json()
+                # KIS API: rt_cd == "0" means success
+                rt_cd = result.get("rt_cd", "")
+                is_success = (rt_cd == "0")
+
                 return {
-                    "success": True,
-                    "order_id": result.get("output", {}).get("ODNO", ""),
+                    "success": is_success,
+                    "order_id": result.get("output", {}).get("ODNO", "") if is_success else "",
                     "message": result.get("msg1", ""),
+                    "msg_cd": result.get("msg_cd", ""),
+                    "rt_cd": rt_cd,
                     "result": result
                 }
             else:

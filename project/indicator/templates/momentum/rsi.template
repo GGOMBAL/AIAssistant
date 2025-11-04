@@ -1,0 +1,86 @@
+"""
+Template: Relative Strength Index (RSI)
+Category: momentum
+Parameters: {period}
+"""
+
+import pandas as pd
+import numpy as np
+
+
+def calculate_rsi_{period}(data: pd.Series, period: int = {period}) -> pd.Series:
+    """
+    Calculate Relative Strength Index (RSI).
+
+    RSI measures the magnitude of recent price changes to evaluate
+    overbought or oversold conditions. Range: 0-100.
+
+    Parameters:
+    -----------
+    data : pd.Series
+        Price series (typically close price)
+    period : int, default={period}
+        Number of periods for RSI calculation
+
+    Returns:
+    --------
+    pd.Series
+        RSI values (0-100) with same index as input data
+
+    Example:
+    --------
+    >>> df['RSI_{period}'] = calculate_rsi_{period}(df['close'])
+
+    References:
+    -----------
+    - Wilder, J. W. (1978). New Concepts in Technical Trading Systems
+    """
+    if not isinstance(data, pd.Series):
+        raise TypeError("Input data must be pandas Series")
+
+    if period < 1:
+        raise ValueError("Period must be positive integer")
+
+    # Calculate price changes
+    delta = data.diff()
+
+    # Separate gains and losses
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+
+    # Calculate average gain and loss using EMA (Exponential Moving Average)
+    # Wilder's smoothing method: first average is SMA, then EMA
+    avg_gain = gain.rolling(window=period, min_periods=period).mean()
+    avg_loss = loss.rolling(window=period, min_periods=period).mean()
+
+    # Apply Wilder's smoothing for subsequent values
+    for i in range(period, len(data)):
+        avg_gain.iloc[i] = (avg_gain.iloc[i-1] * (period - 1) + gain.iloc[i]) / period
+        avg_loss.iloc[i] = (avg_loss.iloc[i-1] * (period - 1) + loss.iloc[i]) / period
+
+    # Calculate RS (Relative Strength)
+    rs = avg_gain / avg_loss.replace(0, np.inf)
+
+    # Calculate RSI
+    rsi = 100 - (100 / (1 + rs))
+
+    # Replace inf/nan with appropriate values
+    rsi = rsi.replace([np.inf, -np.inf], 0).fillna(50)
+
+    return rsi
+
+
+# Metadata for registry
+__indicator_metadata__ = {{
+    "name": "RSI_{period}",
+    "category": "momentum",
+    "description": "Relative Strength Index with {period}-period lookback",
+    "parameters": [{{"name": "period", "value": {period}, "type": "int"}}],
+    "inputs": ["close"],
+    "outputs": ["rsi_{period}"],
+    "calculation": "momentum_oscillator",
+    "generated": True,
+    "template": "rsi",
+    "validation_status": "pending",
+    "tags": ["momentum", "oscillator", "overbought", "oversold"]
+}}

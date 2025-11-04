@@ -14,7 +14,10 @@
       "Bash(findstr:*)",
       "Bash(powershell -Command \"Restart-Service -Name MongoDB -Force\")",
       "Bash(python test_balance_calculation.py:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(python project/strategy/strategy_validator.py:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)"
     ],
     "deny": [],
     "ask": []

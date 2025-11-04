@@ -1,0 +1,568 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2025-11-05T00:00:00Z",
+  "description": "Indicator Registry - Central catalog of all technical indicators",
+  "total_indicators": 29,
+
+  "indicators": {
+    "SMA": {
+      "name": "Simple Moving Average",
+      "category": "trend",
+      "description": "Simple moving average of closing prices",
+      "parameters": [
+        {
+          "name": "period",
+          "type": "int",
+          "default": 20,
+          "range": [1, 500],
+          "description": "Number of periods for average calculation"
+        }
+      ],
+      "inputs": ["close"],
+      "outputs": [
+        {
+          "name": "SMA_{period}",
+          "type": "float",
+          "description": "Simple moving average value"
+        }
+      ],
+      "calculation": "rolling_mean",
+      "module": "project.indicator.technical_indicators",
+      "class": "TechnicalIndicatorGenerator",
+      "function": "_get_ma",
+      "example_usage": "df['SMA_20'] = _get_ma(df['close'], period=20, min_periods=100)",
+      "generated": false,
+      "validated": true,
+      "tags": ["trend", "basic", "moving_average"],
+      "variants": [
+        {"period": 20, "output": "SMA20"},
+        {"period": 50, "output": "SMA50"},
+        {"period": 200, "output": "SMA200"}
+      ]
+    },
+
+    "SMA_Momentum": {
+      "name": "SMA Momentum",
+      "category": "momentum",
+      "description": "Percentage change of SMA over specified period",
+      "parameters": [
+        {
+          "name": "ma_period",
+          "type": "int",
+          "default": 200,
+          "range": [1, 500],
+          "description": "Moving average period"
+        },
+        {
+          "name": "mom_period",
+          "type": "int",
+          "default": 3,
+          "range": [1, 100],
+          "description": "Momentum calculation period"
+        }
+      ],
+      "inputs": ["close"],
+      "outputs": [
+        {
+          "name": "SMA{ma_period}_M",
+          "type": "float",
+          "description": "SMA momentum percentage"
+        }
+      ],
+      "calculation": "sma_pct_change",
+      "module": "project.indicator.technical_indicators",
+      "class": "TechnicalIndicatorGenerator",
+      "function": "_get_sma_momentum",
+      "example_usage": "df['SMA200_M'] = _get_sma_momentum(df, ma_period=200, mom_period=3)",
+      "generated": false,
+      "validated": true,
+      "tags": ["momentum", "trend", "sma"],
+      "variants": [
+        {"ma_period": 200, "mom_period": 3, "output": "SMA200_M"}
+      ]
+    },
+
+    "Rolling_High": {
+      "name": "Rolling High",
+      "category": "trend",
+      "description": "Rolling maximum high price over specified period",
+      "parameters": [
+        {
+          "name": "period",
+          "type": "int",
+          "default": 20,
+          "range": [1, 1000],
+          "description": "Number of periods for rolling high"
+        }
+      ],
+      "inputs": ["high"],
+      "outputs": [
+        {
+          "name": "Highest_{label}",
+          "type": "float",
+          "description": "Rolling high value"
+        }
+      ],
+      "calculation": "rolling_max",
+      "module": "project.indicator.technical_indicators",
+      "class": "TechnicalIndicatorGenerator",
+      "function": "_get_high",
+      "example_usage": "df['Highest_1M'] = _get_high(df, period=20)",
+      "generated": false,
+      "validated": true,
+      "tags": ["trend", "high", "support_resistance"],
+      "variants": [
+        {"period": 20, "label": "1M", "output": "Highest_1M"},
+        {"period": 50, "label": "3M", "output": "Highest_3M"},
+        {"period": 100, "label": "6M", "output": "Highest_6M"},
+        {"period": 200, "label": "1Y", "output": "Highest_1Y"},
+        {"period": 400, "label": "2Y", "output": "Highest_2Y"}
+      ]
+    },
+
+    "Rolling_Max_Weekly": {
+      "name": "Rolling Maximum (Weekly)",
+      "category": "trend",
+      "description": "Rolling maximum high for weekly data",
+      "parameters": [
+        {
+          "name": "period",
+          "type": "int",
+          "default": 52,
+          "range": [1, 200],
+          "description": "Number of weeks for rolling maximum"
+        }
+      ],
+      "inputs": ["high"],
+      "outputs": [
+        {
+          "name": "{period}W_H or {label}_H",
+          "type": "float",
+          "description": "Weekly rolling maximum high"
+        }
+      ],
+      "calculation": "rolling_max",
+      "module": "project.indicator.technical_indicators",
+      "class": "TechnicalIndicatorGenerator",
+      "function": "_get_max",
+      "example_usage": "df['52_H'] = _get_max(df, period=52)",
+      "generated": false,
+      "validated": true,
+      "tags": ["trend", "weekly", "high"],
+      "variants": [
+        {"period": 52, "output": "52_H"},
+        {"period": 48, "label": "1Year", "output": "1Year_H"},
+        {"period": 96, "label": "2Year", "output": "2Year_H"}
+      ]
+    },
+
+    "Rolling_Min_Weekly": {
+      "name": "Rolling Minimum (Weekly)",
+      "category": "trend",
+      "description": "Rolling minimum low for weekly data",
+      "parameters": [
+        {
+          "name": "period",
+          "type": "int",
+          "default": 52,
+          "range": [1, 200],
+          "description": "Number of weeks for rolling minimum"
+        }
+      ],
+      "inputs": ["low"],
+      "outputs": [
+        {
+          "name": "{period}W_L or {label}_L",
+          "type": "float",
+          "description": "Weekly rolling minimum low"
+        }
+      ],
+      "calculation": "rolling_min",
+      "module": "project.indicator.technical_indicators",
+      "class": "TechnicalIndicatorGenerator",
+      "function": "_get_min",
+      "example_usage": "df['52_L'] = _get_min(df, period=52)",
+      "generated": false,
+      "validated": true,
+      "tags": ["trend", "weekly", "low"],
+      "variants": [
+        {"period": 52, "output": "52_L"},
+        {"period": 48, "label": "1Year", "output": "1Year_L"},
+        {"period": 96, "label": "2Year", "output": "2Year_L"}
+      ]
+    },
+
+    "ADR": {
+      "name": "Average Daily Range",
+      "category": "volatility",
+      "description": "Average daily range as percentage of close price",
+      "parameters": [
+        {
+          "name": "window",
+          "type": "int",
+          "default": 20,
+          "range": [1, 100],
+          "description": "Rolling window for ADR calculation"
+        }
+      ],
+      "inputs": ["high", "low", "close"],
+      "outputs": [
+        {
+          "name": "ADR",
+          "type": "float",
+          "description": "Average daily range percentage"
+        }
+      ],
+      "calculation": "rolling_range_pct",
+      "module": "project.indicator.technical_indicators",
+      "class": "TechnicalIndicatorGenerator",
+      "function": "_get_adr_pct",
+      "example_usage": "df['ADR'] = _get_adr_pct(df, window=20)",
+      "generated": false,
+      "validated": true,
+      "tags": ["volatility", "range", "daily"],
+      "variants": [
+        {"window": 20, "output": "ADR"}
+      ]
+    },
+
+    "RS_SMA": {
+      "name": "Relative Strength SMA",
+      "category": "momentum",
+      "description": "Simple moving average of RS_4W value",
+      "parameters": [
+        {
+          "name": "period",
+          "type": "int",
+          "default": 5,
+          "range": [1, 100],
+          "description": "Moving average period for RS"
+        }
+      ],
+      "inputs": ["RS_4W"],
+      "outputs": [
+        {
+          "name": "RS_SMA{period}",
+          "type": "float",
+          "description": "RS moving average"
+        }
+      ],
+      "calculation": "rolling_mean",
+      "module": "project.indicator.technical_indicators",
+      "class": "TechnicalIndicatorGenerator",
+      "function": "_get_ma",
+      "example_usage": "df['RS_SMA5'] = _get_ma(df['RS_4W'], period=5, min_periods=100)",
+      "generated": false,
+      "validated": true,
+      "tags": ["momentum", "relative_strength"],
+      "variants": [
+        {"period": 5, "output": "RS_SMA5"},
+        {"period": 20, "output": "RS_SMA20"}
+      ]
+    },
+
+    "MarketCap": {
+      "name": "Market Capitalization",
+      "category": "fundamental",
+      "description": "Total market value of outstanding shares",
+      "parameters": [],
+      "inputs": ["close", "commonStockSharesOutstanding"],
+      "outputs": [
+        {
+          "name": "MarketCapitalization",
+          "type": "float",
+          "description": "Market cap in currency units"
+        }
+      ],
+      "calculation": "close * shares_outstanding",
+      "module": "project.indicator.technical_indicators",
+      "class": "TechnicalIndicatorGenerator",
+      "function": "_process_fundamental_data",
+      "example_usage": "df['MarketCapitalization'] = df['close'] * df['commonStockSharesOutstanding']",
+      "generated": false,
+      "validated": true,
+      "tags": ["fundamental", "valuation", "market_cap"],
+      "market_specific": ["US"],
+      "variants": []
+    },
+
+    "EPS": {
+      "name": "Earnings Per Share",
+      "category": "fundamental",
+      "description": "Net income divided by shares outstanding",
+      "parameters": [],
+      "inputs": ["netIncome", "commonStockSharesOutstanding"],
+      "outputs": [
+        {
+          "name": "EPS",
+          "type": "float",
+          "description": "Earnings per share"
+        }
+      ],
+      "calculation": "net_income / shares_outstanding",
+      "module": "project.indicator.technical_indicators",
+      "class": "TechnicalIndicatorGenerator",
+      "function": "_process_fundamental_data",
+      "example_usage": "df['EPS'] = df['netIncome'] / df['commonStockSharesOutstanding']",
+      "generated": false,
+      "validated": true,
+      "tags": ["fundamental", "earnings", "profitability"],
+      "market_specific": ["US"],
+      "variants": []
+    },
+
+    "PBR": {
+      "name": "Price-to-Book Ratio",
+      "category": "fundamental",
+      "description": "Price divided by book value per share",
+      "parameters": [],
+      "inputs": ["close", "totalShareholderEquity", "commonStockSharesOutstanding"],
+      "outputs": [
+        {
+          "name": "PBR",
+          "type": "float",
+          "description": "Price-to-book ratio"
+        }
+      ],
+      "calculation": "close / (equity / shares)",
+      "module": "project.indicator.technical_indicators",
+      "class": "TechnicalIndicatorGenerator",
+      "function": "_process_fundamental_data",
+      "example_usage": "df['PBR'] = df['close'] / (df['totalShareholderEquity'] / df['commonStockSharesOutstanding'])",
+      "generated": false,
+      "validated": true,
+      "tags": ["fundamental", "valuation", "book_value"],
+      "market_specific": ["US"],
+      "variants": []
+    },
+
+    "PSR": {
+      "name": "Price-to-Sales Ratio",
+      "category": "fundamental",
+      "description": "Price divided by sales per share",
+      "parameters": [],
+      "inputs": ["close", "totalRevenue", "commonStockSharesOutstanding"],
+      "outputs": [
+        {
+          "name": "PSR",
+          "type": "float",
+          "description": "Price-to-sales ratio"
+        }
+      ],
+      "calculation": "close / (revenue / shares)",
+      "module": "project.indicator.technical_indicators",
+      "class": "TechnicalIndicatorGenerator",
+      "function": "_process_fundamental_data",
+      "example_usage": "df['PSR'] = df['close'] / (df['totalRevenue'] / df['commonStockSharesOutstanding'])",
+      "generated": false,
+      "validated": true,
+      "tags": ["fundamental", "valuation", "sales"],
+      "market_specific": ["US"],
+      "variants": []
+    },
+
+    "ROE": {
+      "name": "Return on Equity",
+      "category": "fundamental",
+      "description": "Net income as percentage of shareholder equity",
+      "parameters": [],
+      "inputs": ["netIncome", "totalShareholderEquity"],
+      "outputs": [
+        {
+          "name": "ROE",
+          "type": "float",
+          "description": "Return on equity percentage"
+        }
+      ],
+      "calculation": "(net_income / equity) * 100",
+      "module": "project.indicator.technical_indicators",
+      "class": "TechnicalIndicatorGenerator",
+      "function": "_process_fundamental_data",
+      "example_usage": "df['ROE'] = (df['netIncome'] / df['totalShareholderEquity']) * 100",
+      "generated": false,
+      "validated": true,
+      "tags": ["fundamental", "profitability", "efficiency"],
+      "market_specific": ["US"],
+      "variants": []
+    },
+
+    "ROA": {
+      "name": "Return on Assets",
+      "category": "fundamental",
+      "description": "Net income as percentage of total assets",
+      "parameters": [],
+      "inputs": ["netIncome", "totalAssets"],
+      "outputs": [
+        {
+          "name": "ROA",
+          "type": "float",
+          "description": "Return on assets percentage"
+        }
+      ],
+      "calculation": "(net_income / assets) * 100",
+      "module": "project.indicator.technical_indicators",
+      "class": "TechnicalIndicatorGenerator",
+      "function": "_process_fundamental_data",
+      "example_usage": "df['ROA'] = (df['netIncome'] / df['totalAssets']) * 100",
+      "generated": false,
+      "validated": true,
+      "tags": ["fundamental", "profitability", "efficiency"],
+      "market_specific": ["US"],
+      "variants": []
+    },
+
+    "GPA": {
+      "name": "Gross Profit to Asset Ratio",
+      "category": "fundamental",
+      "description": "Gross profit as percentage of total assets",
+      "parameters": [],
+      "inputs": ["grossProfit", "totalAssets"],
+      "outputs": [
+        {
+          "name": "GPA",
+          "type": "float",
+          "description": "Gross profit to asset ratio percentage"
+        }
+      ],
+      "calculation": "(gross_profit / assets) * 100",
+      "module": "project.indicator.technical_indicators",
+      "class": "TechnicalIndicatorGenerator",
+      "function": "_process_fundamental_data",
+      "example_usage": "df['GPA'] = (df['grossProfit'] / df['totalAssets']) * 100",
+      "generated": false,
+      "validated": true,
+      "tags": ["fundamental", "profitability"],
+      "market_specific": ["US"],
+      "variants": []
+    },
+
+    "OPM": {
+      "name": "Operating Profit Margin",
+      "category": "fundamental",
+      "description": "Operating income as percentage of revenue",
+      "parameters": [],
+      "inputs": ["operatingIncome", "totalRevenue"],
+      "outputs": [
+        {
+          "name": "OPM",
+          "type": "float",
+          "description": "Operating profit margin percentage"
+        }
+      ],
+      "calculation": "(operating_income / revenue) * 100",
+      "module": "project.indicator.technical_indicators",
+      "class": "TechnicalIndicatorGenerator",
+      "function": "_process_fundamental_data",
+      "example_usage": "df['OPM'] = (df['operatingIncome'] / df['totalRevenue']) * 100",
+      "generated": false,
+      "validated": true,
+      "tags": ["fundamental", "profitability", "margin"],
+      "market_specific": ["US"],
+      "variants": []
+    },
+
+    "EBITDA": {
+      "name": "Earnings Before Interest, Taxes, Depreciation, and Amortization",
+      "category": "fundamental",
+      "description": "Operating income plus depreciation and amortization",
+      "parameters": [],
+      "inputs": ["operatingIncome", "depreciationAndAmortization"],
+      "outputs": [
+        {
+          "name": "EBITDA",
+          "type": "float",
+          "description": "EBITDA value"
+        }
+      ],
+      "calculation": "operating_income + depreciation",
+      "module": "project.indicator.technical_indicators",
+      "class": "TechnicalIndicatorGenerator",
+      "function": "_process_fundamental_data",
+      "example_usage": "df['EBITDA'] = df['operatingIncome'] + df['depreciationAndAmortization']",
+      "generated": false,
+      "validated": true,
+      "tags": ["fundamental", "profitability", "cash_flow"],
+      "market_specific": ["US"],
+      "variants": []
+    },
+
+    "EV": {
+      "name": "Enterprise Value",
+      "category": "fundamental",
+      "description": "Market cap plus total liabilities minus cash",
+      "parameters": [],
+      "inputs": ["MarketCapitalization", "totalLiabilities", "cashAndCashEquivalentsAtCarryingValue"],
+      "outputs": [
+        {
+          "name": "EV",
+          "type": "float",
+          "description": "Enterprise value"
+        }
+      ],
+      "calculation": "market_cap + liabilities - cash",
+      "module": "project.indicator.technical_indicators",
+      "class": "TechnicalIndicatorGenerator",
+      "function": "_process_fundamental_data",
+      "example_usage": "df['EV'] = df['MarketCapitalization'] + df['totalLiabilities'] - df['cashAndCashEquivalentsAtCarryingValue']",
+      "generated": false,
+      "validated": true,
+      "tags": ["fundamental", "valuation", "enterprise_value"],
+      "market_specific": ["US"],
+      "dependencies": ["MarketCap"],
+      "variants": []
+    },
+
+    "EV_EBITDA": {
+      "name": "EV/EBITDA Ratio",
+      "category": "fundamental",
+      "description": "Enterprise value divided by EBITDA",
+      "parameters": [],
+      "inputs": ["EV", "EBITDA"],
+      "outputs": [
+        {
+          "name": "EV/EBITDA",
+          "type": "float",
+          "description": "EV to EBITDA ratio"
+        }
+      ],
+      "calculation": "EV / EBITDA",
+      "module": "project.indicator.technical_indicators",
+      "class": "TechnicalIndicatorGenerator",
+      "function": "_process_fundamental_data",
+      "example_usage": "df['EV/EBITDA'] = df['EV'] / df['EBITDA']",
+      "generated": false,
+      "validated": true,
+      "tags": ["fundamental", "valuation", "multiple"],
+      "market_specific": ["US"],
+      "dependencies": ["EV", "EBITDA"],
+      "variants": []
+    }
+  },
+
+  "categories": {
+    "trend": {
+      "description": "Indicators measuring price trends and direction",
+      "indicators": ["SMA", "Rolling_High", "Rolling_Max_Weekly", "Rolling_Min_Weekly"]
+    },
+    "momentum": {
+      "description": "Indicators measuring rate of price change",
+      "indicators": ["SMA_Momentum", "RS_SMA"]
+    },
+    "volatility": {
+      "description": "Indicators measuring price variability",
+      "indicators": ["ADR"]
+    },
+    "fundamental": {
+      "description": "Fundamental financial metrics",
+      "indicators": ["MarketCap", "EPS", "PBR", "PSR", "ROE", "ROA", "GPA", "OPM", "EBITDA", "EV", "EV_EBITDA"]
+    }
+  },
+
+  "metadata": {
+    "created_by": "Database Agent",
+    "creation_date": "2025-11-05",
+    "schema_version": "1.0.0",
+    "compatible_with": ["technical_indicators.py v1.0"],
+    "notes": "Initial registry populated from existing technical_indicators.py implementation"
+  }
+}

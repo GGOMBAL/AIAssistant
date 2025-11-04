@@ -1,0 +1,255 @@
+# ============================================================================
+# STRATEGY METADATA
+# ============================================================================
+strategy:
+  name: "RSI_Mean_Reversion_V1"
+  version: "1.0"
+  author: "Orchestrator Agent"
+  created: "2025-11-05"
+  description: |
+    RSI-based mean reversion strategy with SMA trend filter and volume confirmation.
+
+    Entry Logic:
+    - Buy when RSI oversold (< 30)
+    - Price above SMA20 (trend filter)
+    - SMA20 above SMA50 (uptrend confirmation)
+    - Volume spike (1.5x above 20-day average)
+
+    Exit Logic:
+    - Profit target: 10%
+    - Stop loss: Stepped trailing stop
+    - Signal exit: RSI overbought (> 70) or price crosses below SMA20
+
+  category: "mean_reversion"
+  market_type: "stocks"  # stocks, crypto, forex
+  timeframe: "daily"     # daily, hourly, 15min
+  tags: ["rsi", "mean_reversion", "trend_filter", "volume_confirmation"]
+
+# ============================================================================
+# INDICATOR REQUIREMENTS
+# ============================================================================
+indicators:
+  # RSI Indicator
+  - name: "RSI"
+    parameters:
+      period: 14
+    output_column: "RSI_14"
+    description: "Relative Strength Index for momentum"
+
+  # Simple Moving Averages for trend filtering
+  - name: "SMA"
+    parameters:
+      period: 20
+    output_column: "SMA_20"
+    description: "Short-term trend indicator"
+
+  - name: "SMA"
+    parameters:
+      period: 50
+    output_column: "SMA_50"
+    description: "Medium-term trend indicator"
+
+  # Volume Moving Average for volume filter
+  - name: "SMA"
+    parameters:
+      period: 20
+    output_column: "Volume_SMA_20"
+    input_column: "volume"  # Apply MA to volume instead of close
+    description: "20-day average volume"
+
+# ============================================================================
+# UNIVERSE SELECTION
+# ============================================================================
+universe:
+  source: "database"  # database, file, api
+  database:
+    name: "NasDataBase_D"
+    filter:
+      # Use specific tickers for now
+      collections: ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "NVDA", "META", "NFLX"]
+
+      # Future: Use query-based filtering
+      # query:
+      #   market_cap: { min: 1000000000 }  # $1B+
+      #   avg_volume_30d: { min: 1000000 }
+
+# ============================================================================
+# ENTRY CONDITIONS (Buy Signal)
+# ============================================================================
+entry:
+  # Condition groups with logical operators
+  conditions:
+    # Group 1: RSI Oversold
+    - group: "rsi_oversold"
+      operator: "AND"
+      rules:
+        - indicator: "RSI_14"
+          operator: "<"
+          value: 30
+          description: "RSI below oversold threshold"
+
+    # Group 2: Trend Filter
+    - group: "trend_filter"
+      operator: "AND"
+      rules:
+        - indicator: "close"
+          operator: ">"
+          reference: "SMA_20"
+          description: "Price above SMA20 (short-term uptrend)"
+
+        - indicator: "SMA_20"
+          operator: ">"
+          reference: "SMA_50"
+          description: "SMA20 above SMA50 (medium-term uptrend)"
+
+    # Group 3: Volume Filter
+    - group: "volume_filter"
+      operator: "AND"
+      rules:
+        - indicator: "volume"
+          operator: ">"
+          reference: "Volume_SMA_20"
+          multiplier: 1.5
+          description: "Volume 1.5x above 20-day average (buying interest)"
+
+  # Combine groups with global logic
+  # All three groups must be true: RSI oversold AND uptrend AND volume spike
+  logic: "rsi_oversold AND trend_filter AND volume_filter"
+
+  # Additional constraints
+  constraints:
+    max_positions: 10
+    position_sizing: "risk_parity"  # equal_weight, risk_parity, kelly
+    risk_per_trade: 0.05  # 5% risk per trade
+
+# ============================================================================
+# EXIT CONDITIONS (Sell Signal)
+# ============================================================================
+exit:
+  # 1. Profit Target
+  profit_target:
+    enabled: true
+    type: "percentage"  # percentage, atr_multiple, fixed_price
+    value: 0.10  # 10% profit target
+    description: "Take profit at 10% gain"
+
+  # 2. Stop Loss (Stepped Trailing Stop)
+  stop_loss:
+    enabled: true
+    type: "stepped_trailing"  # fixed, trailing, stepped_trailing, atr
+    initial_stop: 0.03  # -3% initial stop
+    risk_unit: 0.05     # 5% per unit (from config)
+    description: "Stepped trailing stop loss system"
+
+  # 3. Signal-based Exit
+  signal_exit:
+    enabled: true
+    conditions:
+      - group: "rsi_overbought_exit"
+        operator: "OR"
+        rules:
+          - indicator: "RSI_14"
+            operator: ">"
+            value: 70
+            description: "RSI above overbought threshold"
+
+          - indicator: "close"
+            operator: "crosses_below"  # Special operator for crossover
+            reference: "SMA_20"
+            description: "Price crosses below SMA20 (trend breakdown)"
+
+  # 4. Time-based Exit (Disabled for now)
+  time_exit:
+    enabled: false
+    max_holding_period: 30  # days
+    description: "Exit after 30 days regardless of P&L"
+
+# ============================================================================
+# FILTERS (Pre-entry screening)
+# ============================================================================
+filters:
+  # These are checked BEFORE entry signal
+  - name: "rs_rating_filter"
+    indicator: "RS_Rating"
+    operator: ">="
+    value: 70
+    description: "Relative strength rating must be 70+ (strong performers only)"
+
+  - name: "price_filter"
+    indicator: "close"
+    operator: ">"
+    value: 10.0
+    description: "No penny stocks (price > $10)"
+
+  - name: "liquidity_filter"
+    indicator: "volume"
+    operator: ">"
+    reference: "Volume_SMA_20"
+    multiplier: 0.5
+    description: "Minimum liquidity: volume > 50% of 20-day average"
+
+# ============================================================================
+# RISK MANAGEMENT
+# ============================================================================
+risk_management:
+  initial_capital: 100000000.0  # $100M (1억원)
+  max_portfolio_risk: 0.20  # Max 20% portfolio at risk simultaneously
+  max_position_size: 0.10   # Max 10% capital per position
+  max_sector_exposure: 0.30 # Max 30% per sector (future implementation)
+
+  position_sizing:
+    method: "risk_parity"  # equal_weight, risk_parity, volatility_adjusted
+    base_risk: 0.05        # 5% risk per trade
+
+  # Correlation limit (future implementation)
+  correlation_limit:
+    enabled: false
+    max_correlation: 0.7   # Don't open highly correlated positions
+
+# ============================================================================
+# BACKTEST PARAMETERS
+# ============================================================================
+backtest:
+  start_date: "2020-01-01"
+  end_date: "2024-12-31"
+
+  costs:
+    commission: 0.001      # 0.1% per trade
+    slippage: 0.0005       # 0.05% slippage
+
+  rebalance_frequency: "daily"  # daily, weekly, monthly
+
+  benchmark: "SPY"  # Comparison benchmark
+
+# ============================================================================
+# OPTIMIZATION PARAMETERS (Disabled for V1)
+# ============================================================================
+optimization:
+  enabled: false
+
+  # Future: Parameter optimization
+  # parameters:
+  #   - name: "entry.conditions[0].rules[0].value"  # RSI threshold
+  #     range: [20, 40]
+  #     step: 5
+  #
+  #   - name: "exit.profit_target.value"
+  #     range: [0.05, 0.20]
+  #     step: 0.05
+  #
+  # objective: "sharpe_ratio"  # sharpe_ratio, total_return, max_drawdown
+  # method: "grid_search"      # grid_search, random_search, bayesian
+
+# ============================================================================
+# MONITORING & ALERTS (For live trading - future implementation)
+# ============================================================================
+monitoring:
+  alerts:
+    max_drawdown:
+      threshold: 0.15  # Alert if 15% drawdown
+      action: "pause_trading"
+
+    win_rate:
+      threshold: 0.30  # Alert if win rate < 30%
+      window: 20       # Last 20 trades
+      action: "notify"

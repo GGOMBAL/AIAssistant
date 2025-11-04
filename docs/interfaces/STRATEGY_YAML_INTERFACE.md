@@ -170,9 +170,69 @@ is_valid = validate_strategy_file("config/strategies/my_strategy.yaml")
 
 See `config/strategies/rsi_mean_reversion_v1.yaml` for a complete example.
 
+## Phase 2: YAML Strategy Execution (COMPLETED)
+
+### Python API Usage
+
+```python
+from project.service.yaml_backtest_service import YAMLBacktestService
+
+# Initialize service
+service = YAMLBacktestService()
+
+# Run backtest from YAML file
+results = service.backtest_from_file(
+    yaml_path="config/strategies/my_strategy.yaml",
+    data={"AAPL": df_aapl, "MSFT": df_msft},
+    store_results=True  # Store in MongoDB
+)
+
+# Access results
+if results['success']:
+    print(f"Strategy: {results['strategy_name']}")
+    print(f"Total trades: {len(results['backtest_result'].trades)}")
+    print(f"Final value: {results['backtest_result'].performance_metrics['final_value']}")
+```
+
+### Components
+
+#### 1. YAMLStrategyLoader
+- **Location**: `project/strategy/yaml_strategy_loader.py`
+- **Purpose**: Load and parse YAML strategies into LoadedStrategy objects
+- **Key Classes**: LoadedStrategy, IndicatorSpec, ConditionRule, ConditionGroup
+
+#### 2. ConditionEvaluator
+- **Location**: `project/strategy/condition_evaluator.py`
+- **Purpose**: Evaluate conditions against DataFrame data
+- **Supported Operators**:
+  - Basic: >, <, ==, !=, >=, <=
+  - Special: crosses_above, crosses_below, between, in_list
+  - Functions: rolling_mean, rolling_std, rolling_max, rolling_min, ewm
+
+#### 3. YAMLStrategyExecutor
+- **Location**: `project/strategy/yaml_strategy_executor.py`
+- **Purpose**: Execute strategies and generate signals
+- **Output**: Entry/exit signals with metadata
+
+#### 4. YAMLBacktestService
+- **Location**: `project/service/yaml_backtest_service.py`
+- **Purpose**: Integrate YAML strategies with backtest engine
+- **Features**:
+  - Convert signals to backtest format
+  - Run backtest using DailyBacktestService
+  - Store results in MongoDB
+
+### Testing
+
+Run Phase 2 integration test:
+```bash
+python Test/test_yaml_strategy_phase2.py
+```
+
 ## Notes
 
 - All indicator output columns referenced in conditions must be defined in the `indicators` section
 - Entry logic expression must reference valid group names
 - Dates must be in `YYYY-MM-DD` format
 - Percentages are expressed as decimals (0.10 = 10%)
+- Phase 2 completed: YAML strategies can now be fully executed and backtested

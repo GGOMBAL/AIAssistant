@@ -26,6 +26,10 @@ project/Helper/
 ├── broker_api_connector.py    (529 lines) - 증권사 API 커넥터
 ├── kis_api_helper_us.py       (771 lines) - KIS API 미국 시장
 ├── kis_common.py              (359 lines) - KIS 공통 함수
+├── KIS_MCP/                   - KIS MCP 기반 주문 시스템 (NEW)
+│   ├── __init__.py
+│   ├── kis_mcp_order_helper.py  (367 lines) - KIS MCP 주문 헬퍼
+│   └── README.md               - KIS MCP 사용 가이드
 ├── data_provider_api.py       (427 lines) - 데이터 프로바이더 API
 ├── yfinance_helper.py         (296 lines) - Yahoo Finance 헬퍼
 └── telegram_messenger.py      (419 lines) - Telegram Bot
@@ -686,6 +690,170 @@ class KISUSHelper:
         pass
 ```
 
+### 4.3.1 KISMCPOrderHelper (KIS MCP 주문 헬퍼) **[NEW]**
+
+**파일**: `KIS_MCP/kis_mcp_order_helper.py`
+
+**작성일**: 2025-11-06
+**기반**: [KIS Trading MCP](https://github.com/koreainvestment/open-trading-api/tree/main/MCP)
+
+```python
+class KISMCPOrderHelper:
+    """KIS MCP를 활용한 해외주식 주문 헬퍼
+
+    KIS Open Trading API의 MCP (Model Context Protocol) 기반 주문 시스템.
+    기존 kis_api_helper_us.py와 별도로 운영되며, 더 간결하고 안정적인 주문 처리 제공.
+    """
+
+    def __init__(self, config: dict):
+        """
+        Args:
+            config: myStockInfo.yaml 설정
+                - app_key: KIS API Key
+                - app_secret: KIS API Secret
+                - account_no: 계좌번호 (CANO)
+                - product_code: 계좌상품코드 (ACNT_PRDT_CD)
+                - base_url: API Base URL
+                - is_virtual: 모의투자 여부
+        """
+        pass
+
+    def make_token(self) -> bool:
+        """
+        인증 토큰 발급
+
+        Returns:
+            인증 성공 여부
+        """
+        pass
+
+    def make_buy_order(
+        self,
+        stock_code: str,
+        amt: int,
+        price: float = 0.0,
+        use_market_on_open: bool = False
+    ) -> Dict[str, Any]:
+        """
+        매수 주문
+
+        Args:
+            stock_code: 종목코드
+            amt: 수량
+            price: 가격 (0이면 현재가로 지정가 주문)
+            use_market_on_open: True면 LOO(32) 사용 (실전만)
+
+        Returns:
+            {
+                "success": bool,
+                "order_id": str,
+                "message": str,
+                "rt_cd": str,
+                "msg_cd": str
+            }
+        """
+        pass
+
+    def make_sell_order(
+        self,
+        stock_code: str,
+        amt: int,
+        price: float = 0.0,
+        use_market_on_open: bool = False
+    ) -> Dict[str, Any]:
+        """
+        매도 주문
+
+        Args:
+            stock_code: 종목코드
+            amt: 수량
+            price: 가격 (0이면 현재가로 지정가 주문)
+            use_market_on_open: True면 MOO(31) 사용 (장 개시 전만 가능)
+
+        Returns:
+            주문 결과 딕셔너리
+        """
+        pass
+
+    def get_current_price(self, stock_code: str) -> float:
+        """
+        현재가 조회
+
+        Args:
+            stock_code: 종목코드
+
+        Returns:
+            현재가 (실패 시 0.0)
+        """
+        pass
+
+    def get_balance(self, currency: str = "USD") -> Dict[str, Any]:
+        """
+        계좌 잔고 조회
+
+        Args:
+            currency: 통화 코드
+
+        Returns:
+            {
+                "cash_balance": float,
+                "currency": str,
+                "result": dict
+            }
+        """
+        pass
+
+    def get_market_code_us(self, symbol: str) -> str:
+        """
+        미국 종목의 거래소 코드 반환
+
+        Args:
+            symbol: 종목 코드
+
+        Returns:
+            NASD: 나스닥
+            NYSE: 뉴욕증권거래소
+            AMEX: 아멕스
+        """
+        pass
+```
+
+**주요 특징**:
+- KIS Open Trading API 완전 호환
+- 모의투자/실전투자 자동 전환
+- 현재가 자동 조회 및 지정가 주문
+- 계좌 잔고 조회
+- 오류 처리 및 로깅
+
+**ORD_DVSN (주문 타입)**:
+
+매수 (TTTT1002U / VTTT1002U):
+- `00`: 지정가
+- `32`: LOO (장개시 지정가) - 실전만
+- `34`: LOC (장마감 지정가) - 실전만
+
+매도 (TTTT1006U / VTTT1006U):
+- `00`: 지정가
+- `31`: MOO (장개시 시장가) - 실전만
+- `32`: LOO (장개시 지정가) - 실전만
+- `33`: MOC (장마감 시장가) - 실전만
+- `34`: LOC (장마감 지정가) - 실전만
+
+**참고**: 모의투자는 `00` (지정가)만 사용 가능
+
+**시장가 주문 처리**:
+
+KIS API는 해외주식에 대해 일반적인 시장가 주문을 지원하지 않습니다. 대신:
+- **매수**: 현재가로 지정가 주문 (`ORD_DVSN: "00"`)
+- **매도**: 현재가로 지정가 주문 (`ORD_DVSN: "00"`)
+
+**참고**:
+- MOO(31)는 장 개시 전에만 주문 가능
+- 일반 거래 시간에는 지정가 사용
+- `use_market_on_open=True`로 명시적 지정 시에만 MOO 사용
+
+**상세 문서**: `docs/KIS_MCP_ORDER_SYSTEM.md`
+
 ### 4.4 DataProviderBase (데이터 프로바이더 기본 클래스)
 
 **파일**: `data_provider_api.py`
@@ -1268,6 +1436,7 @@ config/
 
 | 버전 | 날짜 | 변경 사항 |
 |-----|------|----------|
+| 1.1 | 2025-11-06 | KIS MCP 주문 헬퍼 추가 (KISMCPOrderHelper) |
 | 1.0 | 2025-10-09 | 초기 인터페이스 명세 작성 |
 
 ---

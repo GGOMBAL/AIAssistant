@@ -115,7 +115,9 @@ class YAMLBacktestService:
         try:
             # Step 1: Execute strategy to generate signals
             logger.info("Generating signals from YAML strategy...")
-            execution_results = self.executor.execute_strategy(strategy, data)
+            execution_results = self.executor.execute_strategy(
+                strategy, data, calculate_indicators=True
+            )
 
             # Step 2: Convert signals to backtest engine format
             logger.info("Converting signals to backtest format...")

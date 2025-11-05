@@ -1,0 +1,52 @@
+strategy:
+  name: SMA_Crossover
+  version: '1.0'
+  author: Auto-Generated
+  created: '2025-11-05'
+  description: Buy when price crosses above 20-day SMA. Sell when price crosses below
+    20-day SMA or at 12% profit.
+  category: other
+  market_type: stocks
+  timeframe: daily
+indicators:
+- name: SMA
+  parameters:
+    period: 20
+  output_column: SMA_20
+  description: Simple Moving Average with period 20
+- name: SMA
+  parameters:
+    period: 20
+  output_column: SMA_20
+  description: Simple Moving Average with period 20
+entry:
+  conditions:
+  - group: entry_signals
+    operator: AND
+    rules:
+    - indicator: close
+      operator: '>'
+      reference: SMA_20
+      description: Price above SMA_20
+    - indicator: close
+      operator: <
+      reference: SMA_20
+      description: Price below SMA_20
+  logic: entry_signals
+exit:
+  profit_target:
+    enabled: true
+    type: percentage
+    value: 0.12
+  stop_loss:
+    enabled: true
+    type: stepped_trailing
+    initial_stop: 0.03
+    risk_unit: 0.05
+risk_management:
+  initial_capital: 100000000.0
+  max_portfolio_risk: 0.2
+  max_position_size: 0.1
+  position_sizing:
+    method: risk_parity
+    base_risk: 0.05

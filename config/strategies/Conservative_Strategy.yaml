@@ -1,0 +1,230 @@
+# ============================================================================
+# Conservative Strategy - Large Cap High Growth
+# ============================================================================
+# Converted from strategy_signal_config.yaml
+# Original system: E/F/W/RS/D Signal System
+#
+# Strategy Logic:
+# - Target: Large cap stocks (>$10B) with strong fundamentals
+# - Entry: Breakout with strong RS rating and trend confirmation
+# - Exit: Conservative 2% stop loss, 10% profit target
+# - Filters: Market cap, revenue/EPS growth, RS rating, price levels
+# ============================================================================
+
+strategy:
+  name: Conservative_Large_Cap_Growth
+  version: "1.0"
+  author: Strategy Signal Config
+  created: "2025-11-05"
+  description: |
+    Conservative strategy targeting elite large-cap stocks with strong growth.
+
+    Entry Criteria:
+    - Market cap > $10B (large cap only)
+    - Revenue/EPS growth > 5% YoY
+    - RS rating >= 90 (top 10%)
+    - Price breakout confirmation (2Y/1Y/6M/3M/1M)
+    - SMA200 uptrend (SMA200 >= SMA50)
+    - Price near 52-week high (>70% of high, >40% above low)
+
+    Exit Criteria:
+    - Profit target: 10%
+    - Stop loss: 2% initial (conservative)
+    - Stepped trailing stop with 5% risk unit
+
+  category: breakout
+  market_type: stocks
+  timeframe: daily
+  tags:
+    - large_cap
+    - growth
+    - breakout
+    - conservative
+    - rs_rating
+
+# ============================================================================
+# INDICATORS
+# ============================================================================
+indicators:
+  # Moving Averages for trend confirmation
+  - name: SMA
+    parameters:
+      period: 50
+    output_column: SMA_50
+    description: 50-day moving average
+
+  - name: SMA
+    parameters:
+      period: 200
+    output_column: SMA_200
+    description: 200-day moving average
+
+  # Price levels (52-week high/low would be calculated)
+  # These are placeholders - actual implementation needs rolling max/min
+  - name: SMA
+    parameters:
+      period: 252
+    output_column: High_52W
+    input_column: high
+    description: 52-week high approximation
+
+  - name: SMA
+    parameters:
+      period: 252
+    output_column: Low_52W
+    input_column: low
+    description: 52-week low approximation
+
+# ============================================================================
+# ENTRY CONDITIONS
+# ============================================================================
+entry:
+  conditions:
+    # Group 1: Trend Confirmation (SMA200 >= SMA50)
+    - group: trend_uptrend
+      operator: AND
+      rules:
+        - indicator: SMA_200
+          operator: ">="
+          reference: SMA_50
+          description: SMA200 uptrend (SMA200 >= SMA50)
+
+    # Group 2: Price Position (Near 52W high, above 52W low)
+    - group: price_position
+      operator: AND
+      rules:
+        - indicator: close
+          operator: ">"
+          reference: High_52W
+          multiplier: 0.7
+          description: Price > 70% of 52-week high
+
+        - indicator: close
+          operator: ">"
+          reference: Low_52W
+          multiplier: 1.4
+          description: Price > 140% of 52-week low (40% above)
+
+  # Combined logic
+  logic: trend_uptrend AND price_position
+
+# ============================================================================
+# EXIT CONDITIONS
+# ============================================================================
+exit:
+  # 1. Profit Target
+  profit_target:
+    enabled: true
+    type: percentage
+    value: 0.10
+    description: Take profit at 10% gain
+
+  # 2. Stop Loss (Conservative 2%)
+  stop_loss:
+    enabled: true
+    type: stepped_trailing
+    initial_stop: 0.02
+    risk_unit: 0.05
+    description: Conservative 2% initial stop with 5% stepped trailing
+
+  # 3. Signal Exit (Trend breakdown)
+  signal_exit:
+    enabled: true
+    conditions:
+      - group: trend_breakdown
+        operator: OR
+        rules:
+          - indicator: close
+            operator: crosses_below
+            reference: SMA_50
+            description: Price crosses below SMA50 (trend breakdown)
+
+# ============================================================================
+# FILTERS (Pre-entry screening)
+# ============================================================================
+# NOTE: These filters require fundamental data columns in your DataFrame:
+# - market_cap: Market capitalization in USD
+# - revenue_yoy: Revenue year-over-year growth (decimal, e.g., 0.05 = 5%)
+# - eps_yoy: EPS year-over-year growth (decimal)
+# - RS_Rating: Relative strength rating (0-100)
+#
+# If your data source doesn't include these columns, you can:
+# 1. Comment out the filters that use unavailable columns
+# 2. Or add these columns to your data pipeline before running strategy
+
+filters:
+  # Market Cap Filter (Large cap only: >$10B)
+  - name: market_cap_filter
+    indicator: market_cap
+    operator: ">="
+    value: 10000000000
+    description: Large cap only (market cap >= $10B)
+
+  # RS Rating Filter (Top 10%)
+  - name: rs_rating_filter
+    indicator: RS_Rating
+    operator: ">="
+    value: 90
+    description: Strong relative strength (RS >= 90, top 10%)
+
+  # Revenue Growth Filter (Current quarter >= 5%)
+  - name: revenue_growth_filter
+    indicator: revenue_yoy
+    operator: ">="
+    value: 0.05
+    description: Revenue growth >= 5% YoY
+
+  # EPS Growth Filter (Current quarter >= 5%)
+  - name: eps_growth_filter
+    indicator: eps_yoy
+    operator: ">="
+    value: 0.05
+    description: EPS growth >= 5% YoY
+
+  # Price Filter (No penny stocks)
+  - name: price_filter
+    indicator: close
+    operator: ">"
+    value: 10.0
+    description: Price > $10 (no penny stocks)
+
+# ============================================================================
+# RISK MANAGEMENT
+# ============================================================================
+risk_management:
+  initial_capital: 100000000.0
+  max_portfolio_risk: 0.20
+  max_position_size: 0.10
+
+  position_sizing:
+    method: risk_parity
+    base_risk: 0.05
+
+# ============================================================================
+# BACKTEST PARAMETERS
+# ============================================================================
+backtest:
+  start_date: "2020-01-01"
+  end_date: "2024-12-31"
+
+  costs:
+    commission: 0.001
+    slippage: 0.0005
+
+  rebalance_frequency: daily
+  benchmark: SPY
+
+# ============================================================================
+# NOTES
+# ============================================================================
+# Original Signal System:
+# - E (Earnings): Revenue/EPS growth filters
+# - F (Fundamental): Market cap + growth filters
+# - W (Weekly): 52-week high/low position
+# - RS: Relative strength rating
+# - D (Daily): SMA trend + breakout confirmation
+#
+# Converted to:
+# - Filters: Market cap, RS, revenue/EPS (F + RS + E signals)
+# - Entry: Trend + Price position (W + D signals)
+# - Exit: Conservative 2% stop, 10% target

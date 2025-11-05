@@ -17,7 +17,15 @@
       "Bash(find:*)",
       "Bash(python project/strategy/strategy_validator.py:*)",
       "Bash(pip install:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(cat:*)",
+      "WebSearch",
+      "WebFetch(domain:apiportal.koreainvestment.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:lobehub.com)",
+      "Bash(git clone:*)",
+      "Bash(tree:*)",
+      "Bash(dir C:WorkSpacetemp_kis_api)"
     ],
     "deny": [],
     "ask": []

@@ -1,0 +1,233 @@
+# ============================================================================
+# Aggressive Strategy - Small/Mid Cap Moderate Growth
+# ============================================================================
+# Converted from strategy_signal_config.yaml
+# Original system: E/F/W/RS/D Signal System
+#
+# Strategy Logic:
+# - Target: Small/Mid cap stocks ($500M-$20T) with relaxed filters
+# - Entry: Relaxed breakout criteria for more opportunities
+# - Exit: Aggressive 5% stop loss, 10% profit target
+# - Filters: Lower market cap, relaxed growth (5%), lower RS (80+)
+# ============================================================================
+
+strategy:
+  name: Aggressive_Small_Mid_Cap_Growth
+  version: "1.0"
+  author: Strategy Signal Config
+  created: "2025-11-05"
+  description: |
+    Aggressive strategy for small/mid-cap stocks with relaxed filters.
+    Targets more stocks with higher risk tolerance.
+
+    Entry Criteria:
+    - Market cap: $500M - $20T (small/mid cap)
+    - Revenue OR EPS growth >= 5% YoY (relaxed)
+    - RS rating >= 80 (top 20% - relaxed)
+    - Price breakout confirmation
+    - SMA200 uptrend
+    - Price near 52-week high (>60% of high, >20% above low)
+
+    Exit Criteria:
+    - Profit target: 10%
+    - Stop loss: 5% initial (aggressive - wider stop)
+    - Stepped trailing stop with 5% risk unit
+
+  category: breakout
+  market_type: stocks
+  timeframe: daily
+  tags:
+    - small_cap
+    - mid_cap
+    - growth
+    - breakout
+    - aggressive
+    - high_risk
+
+# ============================================================================
+# INDICATORS
+# ============================================================================
+indicators:
+  # Moving Averages
+  - name: SMA
+    parameters:
+      period: 50
+    output_column: SMA_50
+    description: 50-day moving average
+
+  - name: SMA
+    parameters:
+      period: 200
+    output_column: SMA_200
+    description: 200-day moving average
+
+  # 52-week price levels
+  - name: SMA
+    parameters:
+      period: 252
+    output_column: High_52W
+    input_column: high
+    description: 52-week high approximation
+
+  - name: SMA
+    parameters:
+      period: 252
+    output_column: Low_52W
+    input_column: low
+    description: 52-week low approximation
+
+# ============================================================================
+# ENTRY CONDITIONS
+# ============================================================================
+entry:
+  conditions:
+    # Group 1: Trend Confirmation
+    - group: trend_uptrend
+      operator: AND
+      rules:
+        - indicator: SMA_200
+          operator: ">="
+          reference: SMA_50
+          description: SMA200 uptrend
+
+    # Group 2: Price Position (Relaxed - 60% high, 20% above low)
+    - group: price_position
+      operator: AND
+      rules:
+        - indicator: close
+          operator: ">"
+          reference: High_52W
+          multiplier: 0.6
+          description: Price > 60% of 52-week high (relaxed)
+
+        - indicator: close
+          operator: ">"
+          reference: Low_52W
+          multiplier: 1.2
+          description: Price > 120% of 52-week low (20% above - relaxed)
+
+  logic: trend_uptrend AND price_position
+
+# ============================================================================
+# EXIT CONDITIONS
+# ============================================================================
+exit:
+  profit_target:
+    enabled: true
+    type: percentage
+    value: 0.10
+    description: 10% profit target
+
+  stop_loss:
+    enabled: true
+    type: stepped_trailing
+    initial_stop: 0.05
+    risk_unit: 0.05
+    description: Aggressive 5% initial stop with 5% stepped trailing
+
+  signal_exit:
+    enabled: true
+    conditions:
+      - group: trend_breakdown
+        operator: OR
+        rules:
+          - indicator: close
+            operator: crosses_below
+            reference: SMA_50
+            description: Price crosses below SMA50
+
+# ============================================================================
+# FILTERS (Pre-entry screening)
+# ============================================================================
+# NOTE: These filters require fundamental data columns in your DataFrame:
+# - market_cap: Market capitalization in USD
+# - revenue_yoy: Revenue year-over-year growth (decimal)
+# - eps_yoy: EPS year-over-year growth (decimal)
+# - RS_Rating: Relative strength rating (0-100)
+
+filters:
+  # Market Cap Filter (Small/Mid cap: $500M - $20T)
+  - name: market_cap_min_filter
+    indicator: market_cap
+    operator: ">="
+    value: 500000000
+    description: Market cap >= $500M (small/mid cap minimum)
+
+  - name: market_cap_max_filter
+    indicator: market_cap
+    operator: "<="
+    value: 20000000000000
+    description: Market cap <= $20T (small/mid cap maximum)
+
+  # RS Rating Filter (Relaxed - top 20%)
+  - name: rs_rating_filter
+    indicator: RS_Rating
+    operator: ">="
+    value: 80
+    description: RS >= 80 (top 20% - relaxed)
+
+  # Revenue Growth Filter (5% - relaxed)
+  - name: revenue_growth_filter
+    indicator: revenue_yoy
+    operator: ">="
+    value: 0.05
+    description: Revenue growth >= 5% YoY (relaxed)
+
+  # EPS Growth Filter (5% - relaxed)
+  - name: eps_growth_filter
+    indicator: eps_yoy
+    operator: ">="
+    value: 0.05
+    description: EPS growth >= 5% YoY (relaxed)
+
+  # Price Filter (Lower threshold for small caps)
+  - name: price_filter
+    indicator: close
+    operator: ">"
+    value: 5.0
+    description: Price > $5 (lower threshold for small caps)
+
+# ============================================================================
+# RISK MANAGEMENT
+# ============================================================================
+risk_management:
+  initial_capital: 100000000.0
+  max_portfolio_risk: 0.25
+  max_position_size: 0.08
+
+  position_sizing:
+    method: risk_parity
+    base_risk: 0.05
+
+# ============================================================================
+# BACKTEST PARAMETERS
+# ============================================================================
+backtest:
+  start_date: "2020-01-01"
+  end_date: "2024-12-31"
+
+  costs:
+    commission: 0.001
+    slippage: 0.0008
+
+  rebalance_frequency: daily
+  benchmark: SPY
+
+# ============================================================================
+# NOTES
+# ============================================================================
+# Aggressive strategy characteristics:
+# - Lower market cap threshold ($500M vs $2B)
+# - Relaxed growth requirement (5% vs 10%)
+# - Lower RS threshold (80 vs 90)
+# - Wider stop loss (5% vs 3%)
+# - Relaxed price position requirements
+#
+# Original thresholds:
+# - E: 1.0, F: 1.0, W: 1.0, RS: 1.0, D: 0.5
+# - Earnings disabled
+#
+# Expected outcomes:
+# - More trading opportunities
+# - Higher volatility
+# - Potentially higher returns with higher risk

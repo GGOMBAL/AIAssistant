@@ -1,0 +1,53 @@
+strategy:
+  name: RSI_Test_Strategy
+  version: '1.0'
+  author: Auto-Generated
+  created: '2025-11-05'
+  description: "\n    Buy when RSI is below 30 (oversold) and price is below 20-day\
+    \ SMA.\n    Sell at 10% profit target or use 3% initial stop with 5% stepped trailing.\n\
+    \    "
+  category: mean_reversion
+  market_type: stocks
+  timeframe: daily
+indicators:
+- name: RSI
+  parameters:
+    period: 14
+  output_column: RSI_14
+  description: RSI indicator with period 14
+- name: SMA
+  parameters:
+    period: 20
+  output_column: SMA_20
+  description: Simple Moving Average with period 20
+entry:
+  conditions:
+  - group: entry_signals
+    operator: AND
+    rules:
+    - indicator: RSI_14
+      operator: <
+      value: 30
+      description: RSI below 30
+    - indicator: close
+      operator: <
+      reference: SMA_20
+      description: Price below SMA_20
+  logic: entry_signals
+exit:
+  profit_target:
+    enabled: true
+    type: percentage
+    value: 0.1
+  stop_loss:
+    enabled: true
+    type: stepped_trailing
+    initial_stop: 0.03
+    risk_unit: 0.05
+risk_management:
+  initial_capital: 100000000.0
+  max_portfolio_risk: 0.2
+  max_position_size: 0.1
+  position_sizing:
+    method: risk_parity
+    base_risk: 0.05

@@ -706,28 +706,71 @@ class KISUSHelper:
             if not self.token:
                 if not self.make_token():
                     raise Exception("Authentication failed")
-            
+
             # Detect market code
             market_code = self.get_market_code_us(stock_code)
-            
+
             return self._place_us_order(stock_code, "SELL", amt, price, market_code)
-            
+
         except Exception as e:
             logger.error(f"Error placing US sell order: {e}")
             return {"success": False, "error": str(e)}
+
+    def make_buy_market_order(self, stock_code: str, amt: int) -> Dict[str, Any]:
+        """Make buy market order for US stock"""
+        try:
+            if not self.token:
+                if not self.make_token():
+                    raise Exception("Authentication failed")
+
+            # Detect market code
+            market_code = self.get_market_code_us(stock_code)
+
+            # Market order: price = 0, order_type = "01"
+            return self._place_us_order(stock_code, "BUY", amt, 0, market_code, order_type="01")
+
+        except Exception as e:
+            logger.error(f"Error placing US buy market order: {e}")
+            return {"success": False, "error": str(e)}
+
+    def make_sell_market_order(self, stock_code: str, amt: int) -> Dict[str, Any]:
+        """Make sell market order for US stock"""
+        try:
+            if not self.token:
+                if not self.make_token():
+                    raise Exception("Authentication failed")
+
+            # Detect market code
+            market_code = self.get_market_code_us(stock_code)
+
+            # Market order: price = 0, order_type = "01"
+            return self._place_us_order(stock_code, "SELL", amt, 0, market_code, order_type="01")
+
+        except Exception as e:
+            logger.error(f"Error placing US sell market order: {e}")
+            return {"success": False, "error": str(e)}
     
-    def _place_us_order(self, symbol: str, side: str, quantity: int, price: float, 
-                       market_code: str) -> Dict[str, Any]:
-        """Internal method to place US orders"""
+    def _place_us_order(self, symbol: str, side: str, quantity: int, price: float,
+                       market_code: str, order_type: str = "00") -> Dict[str, Any]:
+        """Internal method to place US orders
+
+        Args:
+            symbol: Stock symbol
+            side: BUY or SELL
+            quantity: Number of shares
+            price: Price (0 for market orders)
+            market_code: Market exchange code
+            order_type: "00" for limit order, "01" for market order
+        """
         try:
             url = f"{self.base_url}/uapi/overseas-stock/v1/trading/order"
-            
+
             # Determine transaction ID based on side
             if side.upper() == "BUY":
                 tr_id = "TTTT1002U"  # US buy order
             else:  # SELL
                 tr_id = "TTTT1001U"  # US sell order
-            
+
             headers = {
                 "content-type": "application/json",
                 "authorization": f"Bearer {self.token}",
@@ -735,7 +778,7 @@ class KISUSHelper:
                 "appsecret": self.app_secret,
                 "tr_id": tr_id
             }
-            
+
             data = {
                 "CANO": self.account_no,
                 "ACNT_PRDT_CD": self.product_code,
@@ -744,7 +787,7 @@ class KISUSHelper:
                 "ORD_QTY": str(quantity),
                 "OVRS_ORD_UNPR": str(price),
                 "ORD_SVR_DVSN_CD": "0",  # Order division
-                "ORD_DVSN": "00"  # 00: limit order
+                "ORD_DVSN": order_type  # 00: limit order, 01: market order
             }
             
             response = requests.post(url, headers=headers, data=json.dumps(data))

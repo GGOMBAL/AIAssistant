@@ -1,0 +1,228 @@
+# ============================================================================
+# Balanced Strategy - Mid Cap Moderate Growth (DEFAULT)
+# ============================================================================
+# Converted from strategy_signal_config.yaml
+# Original system: E/F/W/RS/D Signal System
+#
+# Strategy Logic:
+# - Target: Mid cap stocks ($2B-$20T) with moderate growth
+# - Entry: Breakout with good RS rating and trend confirmation
+# - Exit: Moderate 3% stop loss, 10% profit target
+# - Filters: Market cap, revenue/EPS growth (10%), RS rating (90+)
+# ============================================================================
+
+strategy:
+  name: Balanced_Mid_Cap_Growth
+  version: "1.0"
+  author: Strategy Signal Config
+  created: "2025-11-05"
+  description: |
+    Balanced strategy for mid-cap stocks with moderate growth.
+    This is the DEFAULT strategy used in the original system.
+
+    Entry Criteria:
+    - Market cap: $2B - $20T (mid cap)
+    - Revenue OR EPS growth >= 10% YoY
+    - RS rating >= 90 (top 10%)
+    - Price breakout confirmation
+    - SMA200 uptrend
+    - Price near 52-week high (>70% of high, >30% above low)
+
+    Exit Criteria:
+    - Profit target: 10%
+    - Stop loss: 3% initial (moderate)
+    - Stepped trailing stop with 5% risk unit
+
+  category: breakout
+  market_type: stocks
+  timeframe: daily
+  tags:
+    - mid_cap
+    - growth
+    - breakout
+    - balanced
+    - default_strategy
+
+# ============================================================================
+# INDICATORS
+# ============================================================================
+indicators:
+  # Moving Averages
+  - name: SMA
+    parameters:
+      period: 50
+    output_column: SMA_50
+    description: 50-day moving average
+
+  - name: SMA
+    parameters:
+      period: 200
+    output_column: SMA_200
+    description: 200-day moving average
+
+  # 52-week price levels
+  - name: SMA
+    parameters:
+      period: 252
+    output_column: High_52W
+    input_column: high
+    description: 52-week high approximation
+
+  - name: SMA
+    parameters:
+      period: 252
+    output_column: Low_52W
+    input_column: low
+    description: 52-week low approximation
+
+# ============================================================================
+# ENTRY CONDITIONS
+# ============================================================================
+entry:
+  conditions:
+    # Group 1: Trend Confirmation
+    - group: trend_uptrend
+      operator: AND
+      rules:
+        - indicator: SMA_200
+          operator: ">="
+          reference: SMA_50
+          description: SMA200 uptrend
+
+    # Group 2: Price Position (Moderate - 70% high, 30% above low)
+    - group: price_position
+      operator: AND
+      rules:
+        - indicator: close
+          operator: ">"
+          reference: High_52W
+          multiplier: 0.7
+          description: Price > 70% of 52-week high
+
+        - indicator: close
+          operator: ">"
+          reference: Low_52W
+          multiplier: 1.3
+          description: Price > 130% of 52-week low (30% above)
+
+  logic: trend_uptrend AND price_position
+
+# ============================================================================
+# EXIT CONDITIONS
+# ============================================================================
+exit:
+  profit_target:
+    enabled: true
+    type: percentage
+    value: 0.10
+    description: 10% profit target
+
+  stop_loss:
+    enabled: true
+    type: stepped_trailing
+    initial_stop: 0.03
+    risk_unit: 0.05
+    description: Moderate 3% initial stop with 5% stepped trailing
+
+  signal_exit:
+    enabled: true
+    conditions:
+      - group: trend_breakdown
+        operator: OR
+        rules:
+          - indicator: close
+            operator: crosses_below
+            reference: SMA_50
+            description: Price crosses below SMA50
+
+# ============================================================================
+# FILTERS (Pre-entry screening)
+# ============================================================================
+# NOTE: These filters require fundamental data columns in your DataFrame:
+# - market_cap: Market capitalization in USD
+# - revenue_yoy: Revenue year-over-year growth (decimal)
+# - eps_yoy: EPS year-over-year growth (decimal)
+# - RS_Rating: Relative strength rating (0-100)
+
+filters:
+  # Market Cap Filter (Mid cap: $2B - $20T)
+  - name: market_cap_min_filter
+    indicator: market_cap
+    operator: ">="
+    value: 2000000000
+    description: Market cap >= $2B (mid cap minimum)
+
+  - name: market_cap_max_filter
+    indicator: market_cap
+    operator: "<="
+    value: 20000000000000
+    description: Market cap <= $20T (mid cap maximum)
+
+  # RS Rating Filter (Top 10%)
+  - name: rs_rating_filter
+    indicator: RS_Rating
+    operator: ">="
+    value: 90
+    description: RS >= 90 (top 10%)
+
+  # Revenue Growth Filter (10% - moderate)
+  - name: revenue_growth_filter
+    indicator: revenue_yoy
+    operator: ">="
+    value: 0.10
+    description: Revenue growth >= 10% YoY
+
+  # EPS Growth Filter (10% - moderate)
+  - name: eps_growth_filter
+    indicator: eps_yoy
+    operator: ">="
+    value: 0.10
+    description: EPS growth >= 10% YoY
+
+  # Price Filter
+  - name: price_filter
+    indicator: close
+    operator: ">"
+    value: 10.0
+    description: Price > $10
+
+# ============================================================================
+# RISK MANAGEMENT
+# ============================================================================
+risk_management:
+  initial_capital: 100000000.0
+  max_portfolio_risk: 0.20
+  max_position_size: 0.10
+
+  position_sizing:
+    method: risk_parity
+    base_risk: 0.05
+
+# ============================================================================
+# BACKTEST PARAMETERS
+# ============================================================================
+backtest:
+  start_date: "2020-01-01"
+  end_date: "2024-12-31"
+
+  costs:
+    commission: 0.001
+    slippage: 0.0005
+
+  rebalance_frequency: daily
+  benchmark: SPY
+
+# ============================================================================
+# NOTES
+# ============================================================================
+# This is the DEFAULT strategy (active_strategy: "balanced")
+#
+# Original thresholds:
+# - E: 1.0, F: 1.0, W: 1.0, RS: 1.0, D: 0.5
+# - Earnings disabled in original config
+#
+# Key differences from Conservative:
+# - Lower market cap requirement ($2B vs $10B)
+# - Same growth requirement (10% vs 5%)
+# - Same RS threshold (90)
+# - Slightly higher stop loss (3% vs 2%)

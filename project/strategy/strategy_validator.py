@@ -332,7 +332,13 @@ class StrategyValidator:
                 if 'indicator' in filter_rule:
                     ind_name = filter_rule['indicator']
                     builtin = {'close', 'open', 'high', 'low', 'volume'}
-                    common_indicators = {'RS_Rating', 'avg_dollar_volume_20d'}
+                    common_indicators = {
+                        'RS_Rating', 'avg_dollar_volume_20d',
+                        # Fundamental data columns (from external data sources)
+                        'market_cap', 'revenue_yoy', 'eps_yoy',
+                        'revenue_prev_yoy', 'eps_prev_yoy',
+                        'revenue_qoq', 'eps_qoq'
+                    }
                     if (ind_name not in defined_indicators and
                         ind_name not in builtin and
                         ind_name not in common_indicators):

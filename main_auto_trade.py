@@ -1818,7 +1818,7 @@ async def run_auto_backtest(config: dict):
         symbols=symbols,
         start_date=start_date.strftime('%Y-%m-%d'),
         end_date=end_date.strftime('%Y-%m-%d'),
-        initial_cash=100_000_000.0,  # 100M
+        initial_cash=1_000_000.0,  # 1M USD (백테스트용)
         config=config
     )
 
@@ -2578,24 +2578,23 @@ async def run_auto_trading(config: dict, account_type: str = None, execute_order
             if symbol in buy_candidates:
                 candidate = buy_candidates[symbol]
                 if candidate['status'] == 'waiting':
-                    # 목표가 이하로 떨어지면 매수 (또는 목표가에 도달하면 매수)
-                    # 여기서는 현재가가 목표가에 근접하면 매수로 가정
-                    if abs(current_price - candidate['target_price']) / candidate['target_price'] < 0.01:
-                        print(f"\n[BUY SIGNAL] {symbol}: ${current_price:.2f} (Target: ${candidate['target_price']:.2f})")
+                    # 목표가 도달 여부 체크 (현재가가 목표가 이하로 떨어지면 매수)
+                    # TargetPrice는 과거 최고가(저항선) - 현재가가 이 가격 근처 또는 이하일 때 매수
+                    if current_price <= candidate['target_price']:
+                        print(f"\n[BUY SIGNAL] {symbol}: ${current_price:.2f} <= ${candidate['target_price']:.2f}")
 
                         if execute_real_orders and is_regular_market_hours():
-                            # 실제 주문 실행 (정규장 시간에만)
-                            result = kis_api.make_buy_limit_order(
+                            # 실제 주문 실행 (정규장 시간에만) - 시장가 주문
+                            result = kis_api.make_buy_market_order(
                                 stock_code=symbol,
-                                amt=candidate['quantity'],
-                                price=current_price
+                                amt=candidate['quantity']
                             )
 
                             if result.get('success', False):
                                 order_id = result.get('order_id', 'N/A')
-                                print(f"[OK] {symbol} 매수 주문 체결")
+                                print(f"[OK] {symbol} 시장가 매수 주문 체결")
                                 print(f"     주문번호: {order_id}")
-                                print(f"     수량: {candidate['quantity']}주 @ ${current_price:.2f}")
+                                print(f"     수량: {candidate['quantity']}주")
                                 candidate['status'] = 'filled'
                                 # 보유 종목으로 이동
                                 held_positions[symbol] = {
@@ -2609,14 +2608,14 @@ async def run_auto_trading(config: dict, account_type: str = None, execute_order
                                 error_msg = result.get('message', result.get('error', 'Unknown'))
                                 rt_cd = result.get('rt_cd', 'N/A')
                                 msg_cd = result.get('msg_cd', 'N/A')
-                                print(f"[ERROR] {symbol} 매수 주문 실패")
+                                print(f"[ERROR] {symbol} 시장가 매수 주문 실패")
                                 print(f"     rt_cd: {rt_cd}, msg_cd: {msg_cd}")
                                 print(f"     에러: {error_msg}")
                         else:
                             if not is_regular_market_hours():
-                                print(f"[INFO] {symbol} 매수 대기 (정규장 시간 아님)")
+                                print(f"[INFO] {symbol} 목표가 도달, 정규장 대기 중")
                             else:
-                                print(f"[SIMULATION] {symbol} 매수 주문 (실제 주문 비활성화)")
+                                print(f"[SIMULATION] {symbol} 목표가 도달, 시장가 매수 시뮬레이션")
 
             # 보유 종목 익절/손절 체크
             if symbol in held_positions:
@@ -2636,10 +2635,9 @@ async def run_auto_trading(config: dict, account_type: str = None, execute_order
                         print(f"\n[TAKE PROFIT] {symbol}: ${current_price:.2f} >= ${position['target_price']:.2f}")
 
                         if execute_real_orders and is_regular_market_hours():
-                            result = kis_api.make_sell_limit_order(
+                            result = kis_api.make_sell_market_order(
                                 stock_code=symbol,
-                                amt=position['quantity'],
-                                price=current_price
+                                amt=position['quantity']
                             )
 
                             if result.get('success', False):
@@ -2669,10 +2667,9 @@ async def run_auto_trading(config: dict, account_type: str = None, execute_order
                         print(f"\n[STOP LOSS] {symbol}: ${current_price:.2f} <= ${position['losscut_price']:.2f}")
 
                         if execute_real_orders and is_regular_market_hours():
-                            result = kis_api.make_sell_limit_order(
+                            result = kis_api.make_sell_market_order(
                                 stock_code=symbol,
-                                amt=position['quantity'],
-                                price=current_price
+                                amt=position['quantity']
                             )
 
                             if result.get('success', False):

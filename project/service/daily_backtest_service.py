@@ -237,6 +237,9 @@ class DailyBacktestService:
         # Initialize portfolio
         portfolio = Portfolio(cash=self.config.initial_cash)
 
+        # Store initial cash for percentage display
+        self.initial_cash_for_display = self.config.initial_cash
+
         # Run trading simulation
         trades = []
         portfolio_history = []
@@ -905,7 +908,13 @@ class DailyBacktestService:
         win_loss_ratio = self._calculate_win_loss_ratio(portfolio)
         profit_loss_ratio = self._calculate_win_loss_gain(portfolio)
 
-        balance_str = f"{self.COLOR}{portfolio.total_value:.2f}{self.RESET}"
+        # Calculate balance as percentage of initial cash
+        if hasattr(self, 'initial_cash_for_display') and self.initial_cash_for_display > 0:
+            balance_pct = (portfolio.total_value / self.initial_cash_for_display) * 100
+            balance_str = f"{self.COLOR}{balance_pct:.2f}%{self.RESET}"
+        else:
+            balance_str = f"{self.COLOR}{portfolio.total_value:.2f}{self.RESET}"
+
         cash_ratio_str = f"{self.COLOR3}{portfolio.cash_ratio:.2f}{self.RESET}"
 
         # numpy.datetime64를 pandas.Timestamp로 변환

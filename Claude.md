@@ -1,8 +1,8 @@
 # Claude AI Assistant - 핵심 규칙 (Quick Reference)
 
 **프로젝트명**: AI Assistant Multi-Agent Trading System
-**버전**: 3.1 (Stepped Trailing Stop & Feature Updates)
-**최종 업데이트**: 2025-11-03
+**버전**: 3.2 (KIS MCP Order System & Backtest Improvements)
+**최종 업데이트**: 2025-11-06
 
 ---
 
@@ -297,6 +297,18 @@ config/                        # 설정 파일들
 
 ## 📖 주요 변경 이력
 
+### 2025-11-06 (v3.2)
+- **KIS MCP 주문 시스템 구축**: KIS Open Trading API의 MCP 기반 주문 헬퍼 구현
+  - 위치: `project/Helper/KIS_MCP/kis_mcp_order_helper.py`
+  - 기능: 모의투자/실전투자 자동 전환, 지정가 주문, 현재가 조회, 계좌 잔고 조회
+  - 문서: `docs/KIS_MCP_ORDER_SYSTEM.md`, `project/Helper/KIS_MCP/README.md`
+- **백테스트 Balance 표시 개선**: 절대값 → 퍼센트 표시로 변경 (100% 기준)
+  - 초기 자본: $1,000,000 (100% 기준)
+  - 표시 방식: Balance 100.00% = $1M, 110.00% = $1.1M
+  - 위치: `project/service/daily_backtest_service.py:911-916`
+- **Helper Layer 인터페이스 업데이트**: KIS MCP 관련 인터페이스 추가
+  - 위치: `docs/interfaces/HELPER_LAYER_INTERFACE.md` (v1.1)
+
 ### 2025-11-03 (v3.1)
 - **Stepped Trailing Stop 구현**: 단계별 손절가 관리 시스템 (백테스트 & 오토트레이딩)
 - **Config 파일 통합**: strategy_signal_config.yaml로 통합 (단일 설정 파일)
@@ -325,5 +337,5 @@ config/                        # 설정 파일들
 
 **🚨 중요: 이 규칙은 모든 Claude 작업 세션에서 반드시 로드하고 적용해야 합니다.**
 
-**규칙 버전**: 3.1 (Stepped Trailing Stop & Feature Updates)
-**최종 업데이트**: 2025-11-03
+**규칙 버전**: 3.2 (KIS MCP Order System & Backtest Improvements)
+**최종 업데이트**: 2025-11-06

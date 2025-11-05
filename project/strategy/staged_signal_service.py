@@ -684,8 +684,59 @@ class StagedSignalService:
                 filter_rate=1.0
             )
 
-        # If enabled, proceed with normal filtering
-        logger.info("[Daily Stage] ENABLED - Applying daily breakout filters")
+        # If enabled, proceed with filtering
+        # IMPORTANT: Auto trading mode (trading/live) skips breakout filtering
+        # Only backtest mode (analysis) applies breakout conditions
+        if self.execution_mode in ['trading', 'live']:
+            logger.info("[Daily Stage] AUTO TRADING MODE - Passing ALL symbols (no breakout filtering)")
+            logger.info("[Daily Stage] Breakout filtering is only applied in backtest/analysis mode")
+
+            # In auto trading, all symbols pass through (no filtering)
+            # But we still need to add signal columns to DataFrame for backtest service
+            for symbol in symbols:
+                if symbol not in df_D or df_D[symbol].empty:
+                    continue
+
+                df = df_D[symbol]
+
+                # Add required columns for backtest service
+                df['BuySig'] = 1.0  # All symbols get buy signal in auto trading
+                df['SellSig'] = 0.0
+                df['signal'] = 1.0
+                if 'Type' not in df.columns:
+                    df['Type'] = 'Staged'
+
+                # Calculate TargetPrice: minimum of all Highest values
+                highest_cols = ['Highest_1M', 'Highest_3M', 'Highest_6M', 'Highest_1Y', 'Highest_2Y']
+                available_highest = [col for col in highest_cols if col in df.columns]
+
+                if available_highest:
+                    # For each row, find minimum of available Highest values
+                    df['TargetPrice'] = df[available_highest].min(axis=1)
+                else:
+                    # Fallback: 20% above current close
+                    df['TargetPrice'] = df.get('Dclose', df.get('close', 0)) * 1.20
+
+                # LossCutPrice: use configured ratio
+                losscut_ratio = 0.97  # Default 3% stop loss
+                if self.signal_config_loader:
+                    losscut_ratio = self.signal_config_loader.get_daily_losscut_ratio()
+                df['LossCutPrice'] = df.get('Dclose', df.get('close', 0)) * losscut_ratio
+
+                # Update DataFrame
+                df_D[symbol] = df
+
+            return StageResult(
+                passed_symbols=symbols if isinstance(symbols, set) else set(symbols),
+                signals={symbol: 1.0 for symbol in symbols},
+                stage_name='Daily (Auto Trading - No Breakout Filter)',
+                total_input=len(symbols),
+                total_passed=len(symbols),
+                filter_rate=1.0
+            )
+
+        # Backtest mode (analysis): Apply breakout filtering
+        logger.info("[Daily Stage] BACKTEST MODE - Applying daily breakout filters")
         passed_symbols = set()
         signals = {}
 
@@ -776,6 +827,23 @@ class StagedSignalService:
                 df['signal'] = 0.0  # Same as BuySig
                 if 'Type' not in df.columns:
                     df['Type'] = 'Staged'  # Mark as staged pipeline candidate
+
+                # Calculate TargetPrice: minimum of all Highest values (for each date)
+                highest_cols = ['Highest_1M', 'Highest_3M', 'Highest_6M', 'Highest_1Y', 'Highest_2Y']
+                available_highest = [col for col in highest_cols if col in df.columns]
+
+                if available_highest:
+                    # For each row, find minimum of available Highest values
+                    df['TargetPrice'] = df[available_highest].min(axis=1)
+                else:
+                    # Fallback: 20% above current close
+                    df['TargetPrice'] = df.get('Dclose', df.get('close', 0)) * 1.20
+
+                # LossCutPrice: use configured ratio
+                losscut_ratio = 0.97  # Default 3% stop loss
+                if self.signal_config_loader:
+                    losscut_ratio = self.signal_config_loader.get_daily_losscut_ratio()
+                df['LossCutPrice'] = df.get('Dclose', df.get('close', 0)) * losscut_ratio
 
                 # Check ENTIRE DataFrame - pass if ANY day has breakout
                 any_breakout_found = False

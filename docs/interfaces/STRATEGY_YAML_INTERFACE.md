@@ -305,3 +305,101 @@ python Test/test_indicator_auto_calculation.py
   - Calculate from OHLCV data
   - Support 12+ indicator types
   - Validate required columns
+
+## Phase 4: Advanced Features (COMPLETED)
+
+### Strategy Combiner
+
+Combine multiple YAML strategies into composite strategies:
+
+```python
+from project.strategy.strategy_combiner import StrategyCombiner, CombinationMethod
+
+combiner = StrategyCombiner()
+
+# Load multiple strategies
+strategies, errors = combiner.load_strategies([
+    "config/strategies/rsi_strategy.yaml",
+    "config/strategies/macd_strategy.yaml"
+])
+
+# Combine using different methods
+results = combiner.combine_strategies(
+    strategies=strategies,
+    data=data,
+    method=CombinationMethod.AND,  # ALL strategies must agree
+    calculate_indicators=True
+)
+```
+
+**Combination Methods:**
+- `AND`: All strategies must signal (conservative)
+- `OR`: Any strategy can signal (aggressive)
+- `WEIGHTED`: Weighted voting system
+- `MAJORITY`: Majority vote
+
+### Parameter Optimizer
+
+Optimize strategy parameters using grid search:
+
+```python
+from project.strategy.parameter_optimizer import ParameterOptimizer
+
+optimizer = ParameterOptimizer(max_workers=4)
+
+# Define parameter search space
+param_ranges = {
+    'entry.conditions.0.rules.0.value': [25, 30, 35],  # RSI oversold levels
+    'indicators.0.parameters.period': [10, 14, 20]     # RSI periods
+}
+
+# Run optimization
+results = optimizer.optimize(
+    yaml_path="config/strategies/rsi_strategy.yaml",
+    data=data,
+    parameter_ranges=param_ranges,
+    optimization_metric='sharpe_ratio',
+    top_n=10
+)
+
+# Get best parameters
+best_params = results['best_parameters']
+best_sharpe = results['best_performance']['sharpe_ratio']
+
+# Create optimized YAML
+optimizer.create_optimized_yaml(
+    base_yaml_path="config/strategies/rsi_strategy.yaml",
+    optimal_parameters=best_params,
+    output_path="config/strategies/rsi_optimized.yaml"
+)
+```
+
+### Components
+
+#### StrategyCombiner
+- **Location**: `project/strategy/strategy_combiner.py`
+- **Purpose**: Combine multiple strategies
+- **Methods**: AND, OR, WEIGHTED, MAJORITY
+- **Features**:
+  - Load multiple YAML strategies
+  - Execute all strategies on same data
+  - Combine signals intelligently
+  - Track individual strategy votes
+  - Auto indicator calculation
+
+#### ParameterOptimizer
+- **Location**: `project/strategy/parameter_optimizer.py`
+- **Purpose**: Find optimal strategy parameters
+- **Features**:
+  - Grid search over parameter space
+  - Backtest each combination
+  - Rank by performance metric
+  - Parallel processing support
+  - Generate optimized YAML files
+
+### Testing
+
+Test Phase 4 features:
+```bash
+python Test/test_phase4_advanced_features.py
+```

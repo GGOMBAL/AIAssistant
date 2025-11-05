@@ -16,6 +16,11 @@ from datetime import datetime
 from project.strategy.yaml_strategy_loader import YAMLStrategyLoader, LoadedStrategy
 from project.strategy.condition_evaluator import ConditionEvaluator
 
+try:
+    from project.indicator.indicator_calculator import IndicatorCalculator
+except ImportError:
+    IndicatorCalculator = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -33,13 +38,15 @@ class YAMLStrategyExecutor:
     """
 
     def __init__(self, loader: Optional[YAMLStrategyLoader] = None,
-                 evaluator: Optional[ConditionEvaluator] = None):
+                 evaluator: Optional[ConditionEvaluator] = None,
+                 calculator: Optional['IndicatorCalculator'] = None):
         """
         Initialize YAML Strategy Executor
 
         Args:
             loader: Strategy loader instance
             evaluator: Condition evaluator instance
+            calculator: Indicator calculator instance
         """
         if loader is None:
             self.loader = YAMLStrategyLoader()
@@ -50,6 +57,11 @@ class YAMLStrategyExecutor:
             self.evaluator = ConditionEvaluator()
         else:
             self.evaluator = evaluator
+
+        if calculator is None and IndicatorCalculator is not None:
+            self.calculator = IndicatorCalculator()
+        else:
+            self.calculator = calculator
 
         logger.info("Initialized YAMLStrategyExecutor")
 
@@ -120,13 +132,19 @@ class YAMLStrategyExecutor:
         """
         logger.debug(f"Executing strategy for symbol: {symbol}")
 
-        # Step 1: Verify required columns exist
+        # Step 1: Verify required columns exist and calculate if needed
         missing_indicators = self._check_missing_indicators(strategy, df)
 
         if missing_indicators and calculate_indicators:
-            logger.warning(f"Missing indicators for {symbol}: {missing_indicators}")
-            logger.warning("Indicator calculation not yet implemented")
-            # TODO: Implement indicator calculation
+            if self.calculator is None:
+                logger.warning(f"Missing indicators for {symbol}: {missing_indicators}")
+                logger.warning("IndicatorCalculator not available - cannot auto-calculate")
+            else:
+                logger.info(f"Calculating missing indicators for {symbol}: {missing_indicators}")
+                df_updated, calculated = self.calculator.calculate_missing_indicators(
+                    df, missing_indicators, inplace=True
+                )
+                logger.info(f"[OK] Calculated {len(calculated)} indicators for {symbol}")
 
         # Step 2: Apply filters
         filter_result = self.evaluator.evaluate_filters(strategy.filters, df)

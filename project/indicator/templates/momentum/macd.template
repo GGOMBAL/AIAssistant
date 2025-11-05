@@ -1,0 +1,93 @@
+"""
+Template: Moving Average Convergence Divergence (MACD)
+Category: momentum
+Parameters: {fast_period}, {slow_period}, {signal_period}
+"""
+
+import pandas as pd
+import numpy as np
+
+
+def calculate_macd_{fast_period}_{slow_period}_{signal_period}(data: pd.Series, 
+                                                                fast_period: int = {fast_period},
+                                                                slow_period: int = {slow_period},
+                                                                signal_period: int = {signal_period}) -> pd.DataFrame:
+    """
+    Calculate MACD (Moving Average Convergence Divergence).
+
+    MACD shows the relationship between two moving averages of prices.
+    It consists of MACD line, signal line, and histogram.
+
+    Parameters:
+    -----------
+    data : pd.Series
+        Price series (typically close price)
+    fast_period : int, default={fast_period}
+        Fast EMA period
+    slow_period : int, default={slow_period}
+        Slow EMA period
+    signal_period : int, default={signal_period}
+        Signal line period
+
+    Returns:
+    --------
+    pd.DataFrame
+        DataFrame with columns: macd, signal, histogram
+
+    Example:
+    --------
+    >>> macd_df = calculate_macd_{fast_period}_{slow_period}_{signal_period}(df['close'])
+    >>> df['MACD'] = macd_df['macd']
+    >>> df['MACD_Signal'] = macd_df['signal']
+    >>> df['MACD_Hist'] = macd_df['histogram']
+
+    Formula:
+    --------
+    MACD Line = EMA(fast) - EMA(slow)
+    Signal Line = EMA(MACD, signal_period)
+    Histogram = MACD - Signal
+    """
+    if not isinstance(data, pd.Series):
+        raise TypeError("Input data must be pandas Series")
+
+    # Calculate fast and slow EMAs
+    ema_fast = data.ewm(span=fast_period, adjust=False).mean()
+    ema_slow = data.ewm(span=slow_period, adjust=False).mean()
+
+    # Calculate MACD line
+    macd_line = ema_fast - ema_slow
+
+    # Calculate signal line
+    signal_line = macd_line.ewm(span=signal_period, adjust=False).mean()
+
+    # Calculate histogram
+    histogram = macd_line - signal_line
+
+    # Return as DataFrame
+    result = pd.DataFrame({{
+        'macd': macd_line,
+        'signal': signal_line,
+        'histogram': histogram
+    }}, index=data.index)
+
+    return result
+
+
+# Metadata for registry
+__indicator_metadata__ = {{
+    "name": "MACD_{fast_period}_{slow_period}_{signal_period}",
+    "category": "momentum",
+    "description": "MACD with {fast_period}/{slow_period}/{signal_period} periods",
+    "parameters": [
+        {{"name": "fast_period", "value": {fast_period}, "type": "int"}},
+        {{"name": "slow_period", "value": {slow_period}, "type": "int"}},
+        {{"name": "signal_period", "value": {signal_period}, "type": "int"}}
+    ],
+    "inputs": ["close"],
+    "outputs": ["macd", "signal", "histogram"],
+    "calculation": "ema_convergence_divergence",
+    "generated": True,
+    "template": "macd",
+    "validation_status": "pending",
+    "tags": ["momentum", "trend", "oscillator", "ema"]
+}}

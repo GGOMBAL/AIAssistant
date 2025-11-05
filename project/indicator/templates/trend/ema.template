@@ -1,0 +1,65 @@
+"""
+Template: Exponential Moving Average (EMA)
+Category: trend
+Parameters: {period}
+"""
+
+import pandas as pd
+import numpy as np
+
+
+def calculate_ema_{period}(data: pd.Series, period: int = {period}) -> pd.Series:
+    """
+    Calculate Exponential Moving Average (EMA).
+
+    EMA gives more weight to recent prices, making it more responsive
+    to price changes compared to SMA.
+
+    Parameters:
+    -----------
+    data : pd.Series
+        Price series (typically close price)
+    period : int, default={period}
+        Number of periods for EMA calculation
+
+    Returns:
+    --------
+    pd.Series
+        EMA values with same index as input data
+
+    Example:
+    --------
+    >>> df['EMA_{period}'] = calculate_ema_{period}(df['close'])
+
+    Formula:
+    --------
+    Multiplier = 2 / (period + 1)
+    EMA = (Close - EMA_previous) * Multiplier + EMA_previous
+    First EMA = SMA
+    """
+    if not isinstance(data, pd.Series):
+        raise TypeError("Input data must be pandas Series")
+
+    if period < 1:
+        raise ValueError("Period must be positive integer")
+
+    # Calculate exponential moving average
+    ema = data.ewm(span=period, adjust=False, min_periods=period).mean()
+
+    return ema
+
+
+# Metadata for registry
+__indicator_metadata__ = {{
+    "name": "EMA_{period}",
+    "category": "trend",
+    "description": "Exponential Moving Average with {period}-period lookback",
+    "parameters": [{{"name": "period", "value": {period}, "type": "int"}}],
+    "inputs": ["close"],
+    "outputs": ["ema_{period}"],
+    "calculation": "exponential_weighted_average",
+    "generated": True,
+    "template": "ema",
+    "validation_status": "pending",
+    "tags": ["trend", "moving_average", "exponential", "smoothing"]
+}}

@@ -236,3 +236,72 @@ python Test/test_yaml_strategy_phase2.py
 - Dates must be in `YYYY-MM-DD` format
 - Percentages are expressed as decimals (0.10 = 10%)
 - Phase 2 completed: YAML strategies can now be fully executed and backtested
+
+## Phase 3: Indicator Auto-Calculation (COMPLETED)
+
+### Automatic Indicator Calculation
+
+When executing strategies, missing indicators can be automatically calculated:
+
+```python
+from project.strategy.yaml_strategy_executor import YAMLStrategyExecutor
+
+executor = YAMLStrategyExecutor()
+
+# Data without indicators (only OHLCV)
+data = {'AAPL': df_without_indicators}
+
+# Execute with auto-calculation
+results = executor.execute_strategy(
+    strategy=strategy,
+    data=data,
+    calculate_indicators=True  # Automatically calculate missing indicators
+)
+```
+
+### Supported Indicators (Auto-Calculation)
+
+The IndicatorCalculator can automatically calculate:
+
+**Momentum:**
+- RSI (Relative Strength Index)
+- MACD (Moving Average Convergence Divergence)
+
+**Trend:**
+- SMA (Simple Moving Average)
+- EMA (Exponential Moving Average)
+- Rolling High/Low
+
+**Volatility:**
+- ATR (Average True Range)
+- Bollinger Bands
+
+**Volume:**
+- Volume SMA
+
+### Templates Available
+
+Template-based generation for:
+- `momentum/rsi.template` - RSI with configurable period
+- `momentum/macd.template` - MACD with fast/slow/signal periods
+- `trend/sma.template` - SMA with configurable period
+- `trend/ema.template` - EMA with configurable period
+- `volatility/atr.template` - ATR with configurable period
+
+### Testing
+
+Test auto-calculation:
+```bash
+python Test/test_indicator_auto_calculation.py
+```
+
+### Components
+
+#### IndicatorCalculator
+- **Location**: `project/indicator/indicator_calculator.py`
+- **Purpose**: Automatically calculate missing technical indicators
+- **Features**:
+  - Parse indicator names (e.g., "RSI_14" -> RSI with period=14)
+  - Calculate from OHLCV data
+  - Support 12+ indicator types
+  - Validate required columns

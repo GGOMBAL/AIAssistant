@@ -1,0 +1,63 @@
+"""
+Template: Simple Moving Average (SMA)
+Category: trend
+Parameters: {period}
+"""
+
+import pandas as pd
+import numpy as np
+
+
+def calculate_sma_{period}(data: pd.Series, period: int = {period}) -> pd.Series:
+    """
+    Calculate Simple Moving Average (SMA).
+
+    SMA is the average price over a specified period, used to smooth
+    out short-term fluctuations and highlight longer-term trends.
+
+    Parameters:
+    -----------
+    data : pd.Series
+        Price series (typically close price)
+    period : int, default={period}
+        Number of periods for SMA calculation
+
+    Returns:
+    --------
+    pd.Series
+        SMA values with same index as input data
+
+    Example:
+    --------
+    >>> df['SMA_{period}'] = calculate_sma_{period}(df['close'])
+
+    Formula:
+    --------
+    SMA = Sum(Price, period) / period
+    """
+    if not isinstance(data, pd.Series):
+        raise TypeError("Input data must be pandas Series")
+
+    if period < 1:
+        raise ValueError("Period must be positive integer")
+
+    # Calculate simple moving average
+    sma = data.rolling(window=period, min_periods=period).mean()
+
+    return sma
+
+
+# Metadata for registry
+__indicator_metadata__ = {{
+    "name": "SMA_{period}",
+    "category": "trend",
+    "description": "Simple Moving Average with {period}-period lookback",
+    "parameters": [{{"name": "period", "value": {period}, "type": "int"}}],
+    "inputs": ["close"],
+    "outputs": ["sma_{period}"],
+    "calculation": "rolling_average",
+    "generated": True,
+    "template": "sma",
+    "validation_status": "pending",
+    "tags": ["trend", "moving_average", "smoothing"]
+}}

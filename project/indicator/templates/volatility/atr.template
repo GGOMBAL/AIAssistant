@@ -1,0 +1,82 @@
+"""
+Template: Average True Range (ATR)
+Category: volatility
+Parameters: {period}
+"""
+
+import pandas as pd
+import numpy as np
+
+
+def calculate_atr_{period}(high: pd.Series, low: pd.Series, close: pd.Series, period: int = {period}) -> pd.Series:
+    """
+    Calculate Average True Range (ATR).
+
+    ATR measures market volatility by decomposing the entire range of
+    an asset price for a period. Higher ATR indicates higher volatility.
+
+    Parameters:
+    -----------
+    high : pd.Series
+        High prices
+    low : pd.Series
+        Low prices
+    close : pd.Series
+        Close prices
+    period : int, default={period}
+        Number of periods for ATR calculation
+
+    Returns:
+    --------
+    pd.Series
+        ATR values with same index as input data
+
+    Example:
+    --------
+    >>> df['ATR_{period}'] = calculate_atr_{period}(df['high'], df['low'], df['close'])
+
+    Formula:
+    --------
+    1. TR = max[(high - low), abs(high - close_prev), abs(low - close_prev)]
+    2. ATR = EMA(TR, period)
+
+    References:
+    -----------
+    - Wilder, J. W. (1978). New Concepts in Technical Trading Systems
+    """
+    if not isinstance(high, pd.Series) or not isinstance(low, pd.Series) or not isinstance(close, pd.Series):
+        raise TypeError("All inputs must be pandas Series")
+
+    if period < 1:
+        raise ValueError("Period must be positive integer")
+
+    # Calculate True Range components
+    prev_close = close.shift(1)
+
+    tr1 = high - low
+    tr2 = (high - prev_close).abs()
+    tr3 = (low - prev_close).abs()
+
+    # True Range is the maximum of the three
+    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+    # Calculate ATR as EMA of True Range
+    atr = true_range.ewm(span=period, adjust=False, min_periods=period).mean()
+
+    return atr
+
+
+# Metadata for registry
+__indicator_metadata__ = {{
+    "name": "ATR_{period}",
+    "category": "volatility",
+    "description": "Average True Range with {period}-period lookback",
+    "parameters": [{{"name": "period", "value": {period}, "type": "int"}}],
+    "inputs": ["high", "low", "close"],
+    "outputs": ["atr_{period}"],
+    "calculation": "true_range_ema",
+    "generated": True,
+    "template": "atr",
+    "validation_status": "pending",
+    "tags": ["volatility", "true_range", "wilder"]
+}}
